@@ -102,7 +102,6 @@ class ClickEngine:
         if self.is_running:
             return
 
-        # Changed to support float MS for ultimate precision (e.g. 0.5 ms)
         self.interval_ms = max(0.1, min(3_600_000.0, float(interval_ms))) 
         self.button_str = button_str
         button_map = {"left": Button.left, "right": Button.right, "middle": Button.middle}
@@ -171,16 +170,11 @@ class ClickEngine:
             return
         target_time = time.perf_counter() + seconds
 
-        # BUGFIX: Windows Event.wait() can overshoot by up to ~15.6ms due to the OS tick resolution.
-        # If we only subtracted 0.002, wait() could easily overshoot target_time for small delays.
-        # We now use a generous 20ms (0.020s) margin so wait() never overshoots.
-        # The remainder is strictly spin-waited for perfect microsecond precision!
         if seconds > 0.020:
             sleep_duration = seconds - 0.020
             if self._stop_event.wait(sleep_duration):
                 return
         
-        # Spin-wait the remaining <20ms
         while time.perf_counter() < target_time:
             if self._stop_event.is_set():
                 return

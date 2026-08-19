@@ -267,7 +267,6 @@ class ClickForgeApp(ctk.CTk):
             self._mouse_listener = mouse.Listener(on_click=on_click)
             self._mouse_listener.start()
 
-        # BUGFIX: Delay listener start so the mouse release from clicking the "Pick" button itself doesn't trigger it!
         self.after(200, start_listener)
 
     def _on_position_picked(self, x: float, y: float):
@@ -290,7 +289,6 @@ class ClickForgeApp(ctk.CTk):
         )
 
     def _on_hotkey_recorded(self, key_str: str):
-        # Allow user to hit escape to back out without unbinding
         if key_str == "esc":
             current_hk = self.hotkey_manager.hotkey
             self.hotkey_btn.configure(text=f"Hotkey: {current_hk.upper()}", fg_color=["#3B8ED0", "#1F6AA5"], state="normal")
@@ -316,7 +314,6 @@ class ClickForgeApp(ctk.CTk):
                 
             unit = self.interval_unit.get()
             
-            # Use float precision to allow sub-millisecond or partial millisecond configurations (e.g. 0.5 ms)
             interval_ms = float(interval_val * 1000) if unit == "sec" else float(interval_val)
 
             btn = self.mouse_btn_var.get().lower()

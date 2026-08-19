@@ -1,0 +1,6 @@
+# Modern Python UI library based on Tkinter
+customtkinter>=5.2.0
+# For controlling and monitoring the mouse and keyboard
+pynput>=1.7.6
+# For determining appropriate platform-specific user data directories
+platformdirs>=4.0.0
