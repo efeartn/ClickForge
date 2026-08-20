@@ -1,6 +1,7 @@
 """
-Main GUI application for ClickForge.
-Modern, minimalist redesign with UX and Hotkey improvements.
+ClickForge — Premium Bento Grid UI
+Lora serif for labels, Segoe UI bold for actions.
+Purple/blue gradient palette. Fixed styling and sizes.
 """
 
 import tkinter as tk
@@ -16,36 +17,96 @@ from clickforge.clicker import ClickEngine
 from clickforge.hotkey import HotkeyManager
 from clickforge.platform_utils import get_platform, show_platform_warnings
 
+# ── Colors ───────────────────────────────────────────────────────────
+BG_DARK       = "#0F0E17"
+BG_LIGHT      = "#F0EFFA"
+
+CARD_A_DARK   = "#1A1730"
+CARD_B_DARK   = "#1C1832"
+CARD_C_DARK   = "#181A33"
+CARD_D_DARK   = "#1E1934"
+
+CARD_A_LIGHT  = "#EDE9FA"
+CARD_B_LIGHT  = "#EBE8F8"
+CARD_C_LIGHT  = "#E8EAF9"
+CARD_D_LIGHT  = "#EDEBFA"
+
+ACCENT        = "#7C3AED"
+ACCENT_HOVER  = "#6D28D9"
+ACCENT_SOFT   = "#8B5CF6"
+INDIGO        = "#6366F1"
+RED           = "#EF4444"
+RED_HOVER     = "#DC2626"
+GREEN         = "#10B981"
+AMBER         = "#F59E0B"
+DIM           = "#6B7280"
+MUTED         = "#4B5563"
+
+# Segmented button backgrounds (to make them borderless/seamless)
+SEG_BG_DARK   = "#252140"
+SEG_BG_LIGHT  = "#DFDBF0"
+
+FONT_BODY     = "Lora"
+FONT_ACTION   = "Segoe UI"
+FALLBACK      = "Segoe UI"
+
+
 def get_resource_path(relative_path: str) -> str:
-    """Get absolute path to resource, works for dev and for PyInstaller."""
     try:
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
 
+
+def load_custom_font():
+    path = get_resource_path(os.path.join("assets", "fonts", "Lora[wght].ttf"))
+    if not os.path.exists(path):
+        return False
+    if sys.platform.startswith('win'):
+        import ctypes
+        return ctypes.windll.gdi32.AddFontResourceExW(path, 0x10, 0) > 0
+    return False
+
+
 class ClickForgeApp(ctk.CTk):
     def __init__(self):
-        # Appearance
-        ctk.set_appearance_mode("dark")
-        ctk.set_default_color_theme("blue")
-
         super().__init__()
-        self.title(f"{__app_name__} v{__version__}")
-        self.geometry("400x560")
-        self.resizable(False, False)
-        
-        # Set Icon
-        try:
-            icon_path = get_resource_path(os.path.join("assets", "icon.ico"))
-            if os.path.exists(icon_path):
-                self.iconbitmap(icon_path)
-        except Exception:
-            pass # Ignore if icon fails to load
+
+        self._font_ok = load_custom_font()
+        if not self._font_ok:
+            global FONT_BODY
+            FONT_BODY = FALLBACK
 
         self._config = Config()
+        self._current_theme = self._config.get("appearance_mode", "System")
+        ctk.set_appearance_mode(self._current_theme)
+        ctk.set_default_color_theme("blue")
+
+        # Force Windows to treat this as a unique app to break icon cache
+        if sys.platform.startswith('win'):
+            import ctypes
+            myappid = f'clickforge.app.v{__version__}'
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+        self.title(__app_name__)
+        # Slightly wider and taller to fit bigger text
+        self.geometry("480x680")
+        self.resizable(False, False)
+        self.configure(fg_color=(BG_LIGHT, BG_DARK))
+
+        try:
+            from PIL import Image, ImageTk
+            ico = get_resource_path(os.path.join("assets", "icon.ico"))
+            if os.path.exists(ico):
+                img = Image.open(ico)
+                photo = ImageTk.PhotoImage(img)
+                self.iconphoto(False, photo)
+        except Exception:
+            pass
+
         self.click_engine = ClickEngine(
-            on_click=self._on_click_callback,
+            on_click=lambda c: None,
             on_stopped=self._on_engine_stopped,
         )
         self.hotkey_manager = HotkeyManager(
@@ -53,383 +114,460 @@ class ClickForgeApp(ctk.CTk):
             on_toggle=self.toggle_clicking,
         )
 
-        self.is_running: bool = False
-        self.current_clicks: int = 0
-        self.picking_position: bool = False
+        self.is_running = False
+        self.picking_position = False
         self._mouse_listener: Optional[mouse.Listener] = None
 
-        self._create_widgets()
-        self._load_settings_to_ui()
+        self._build_ui()
+        self._load_settings()
+
         self.hotkey_manager.start()
-        self._poll_updates()
+        self._poll()
         self.after(500, self._check_platform)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _check_platform(self):
         show_platform_warnings(self)
 
-    def _create_widgets(self):
-        # Container with minimalist padding
-        self.main_container = ctk.CTkFrame(self, fg_color="transparent")
-        self.main_container.pack(fill="both", expand=True, padx=20, pady=20)
+    # ── Fonts ────────────────────────────────────────────────────────
 
-        self._create_header(self.main_container)
-        self._create_main_settings(self.main_container)
-        self._create_position_settings(self.main_container)
-        self._create_hotkey_settings(self.main_container)
-        
-        # Spacer
-        ctk.CTkFrame(self.main_container, fg_color="transparent", height=10).pack()
-        
-        self._create_controls(self.main_container)
-        self._create_footer(self.main_container)
+    def _body(self, size=15, weight="normal"):
+        return ctk.CTkFont(family=FONT_BODY, size=size, weight=weight)
 
-    def _create_header(self, parent: ctk.CTkFrame):
-        header_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(0, 15))
+    def _action(self, size=18, weight="bold"):
+        return ctk.CTkFont(family=FONT_ACTION, size=size, weight=weight)
 
-        title_label = ctk.CTkLabel(
-            header_frame,
-            text=__app_name__,
-            font=ctk.CTkFont(size=24, weight="bold"),
+    # ── UI ───────────────────────────────────────────────────────────
+
+    def _build_ui(self):
+        p = 18
+
+        # Header
+        hdr = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        hdr.pack(fill="x", padx=p, pady=(p, 12))
+
+        ctk.CTkLabel(hdr, text=__app_name__, font=self._body(26, "bold")).pack(side="left")
+
+        # Theme selector: Cycling Button (fixes ugly OptionMenu border)
+        self.theme_btn = ctk.CTkButton(
+            hdr, text=f"Theme: {self._current_theme}", width=100, height=32,
+            font=self._body(13), corner_radius=10,
+            fg_color=(CARD_A_LIGHT, CARD_A_DARK),
+            text_color=("black", "white"),
+            hover_color=(CARD_B_LIGHT, CARD_C_DARK),
+            command=self._cycle_theme,
         )
-        title_label.pack(side="left")
+        self.theme_btn.pack(side="right", padx=(8, 0))
 
+        # Hotkey pill
+        self.hotkey_btn = ctk.CTkButton(
+            hdr, text="F6", width=50, height=32, corner_radius=10,
+            fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            font=self._body(14, "bold"), command=self._change_hotkey,
+        )
+        self.hotkey_btn.pack(side="right", padx=(8, 0))
+
+        # Status badge
         self.status_label = ctk.CTkLabel(
-            header_frame,
-            text="Stopped",
-            text_color="#ff5555",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            hdr, text=" STOPPED ", font=self._body(12, "bold"),
+            fg_color=RED, text_color="white", corner_radius=8,
+            padx=6, pady=2
         )
         self.status_label.pack(side="right")
 
-    def _create_main_settings(self, parent: ctk.CTkFrame):
-        frame = ctk.CTkFrame(parent, corner_radius=10)
-        frame.pack(fill="x", pady=8)
+        # ── Bento Grid ───────────────────────────────────────────────
+        grid = ctk.CTkFrame(self, fg_color="transparent")
+        grid.pack(fill="both", expand=True, padx=p, pady=(0, 10))
+        grid.grid_columnconfigure(0, weight=2)
+        grid.grid_columnconfigure(1, weight=3)
+        grid.grid_rowconfigure(0, weight=1)
+        grid.grid_rowconfigure(1, weight=1)
+        self._grid = grid
 
-        vcmd = (self.register(self._validate_number_input), "%P")
+        g = 12
+        self._build_cps_card(0, 0, (0, g), (0, g))
+        self._build_speed_card(0, 1, (0, 0), (0, g))
+        self._build_position_card(1, 0, (0, g), (0, 0))
+        self._build_action_card(1, 1, (0, 0), (0, 0))
 
-        # Row 1: Interval
-        row1 = ctk.CTkFrame(frame, fg_color="transparent")
-        row1.pack(fill="x", padx=15, pady=(15, 10))
-        ctk.CTkLabel(row1, text="Interval", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        
-        self.interval_unit = ctk.CTkSegmentedButton(row1, values=["ms", "sec"], width=80)
-        self.interval_unit.pack(side="right", padx=(10, 0))
-        
-        self.interval_entry = ctk.CTkEntry(row1, width=70, validate="key", validatecommand=vcmd, justify="center")
-        self.interval_entry.pack(side="right")
+        # ── START Button ─────────────────────────────────────────────
+        self.start_btn = ctk.CTkButton(
+            self, text="S T A R T", height=60, corner_radius=16,
+            font=self._action(24, "bold"),
+            fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            command=self.toggle_clicking,
+        )
+        self.start_btn.pack(fill="x", padx=p, pady=(6, p))
 
-        # Row 2: Mouse & Type
-        row2 = ctk.CTkFrame(frame, fg_color="transparent")
-        row2.pack(fill="x", padx=15, pady=5)
-        
-        self.mouse_btn_var = ctk.StringVar(value="Left")
-        self.mouse_btn_menu = ctk.CTkOptionMenu(row2, variable=self.mouse_btn_var, values=["Left", "Right", "Middle"], width=100)
-        self.mouse_btn_menu.pack(side="left")
+    # ── Cards ────────────────────────────────────────────────────────
 
-        self.click_type_var = ctk.StringVar(value="Single")
-        self.click_type_menu = ctk.CTkOptionMenu(row2, variable=self.click_type_var, values=["Single", "Double"], width=100)
-        self.click_type_menu.pack(side="right")
+    def _card(self, row, col, padx, pady, dark, light):
+        c = ctk.CTkFrame(self._grid, corner_radius=18, fg_color=(light, dark))
+        c.grid(row=row, column=col, padx=padx, pady=pady, sticky="nsew")
+        return c
 
-        # Row 3: Mode
-        row3 = ctk.CTkFrame(frame, fg_color="transparent")
-        row3.pack(fill="x", padx=15, pady=(10, 15))
+    def _build_cps_card(self, r, c, px, py):
+        card = self._card(r, c, px, py, CARD_A_DARK, CARD_A_LIGHT)
+
+        ctk.CTkLabel(card, text="LIVE", font=self._body(12), text_color=DIM).pack(pady=(24, 4))
+        self.cps_val = ctk.CTkLabel(card, text="0", font=self._body(52, "bold"), text_color=ACCENT_SOFT)
+        self.cps_val.pack()
+        ctk.CTkLabel(card, text="CPS", font=self._body(14, "bold"), text_color=DIM).pack()
+
+        self.total_lbl = ctk.CTkLabel(card, text="Total: 0", font=self._body(13), text_color=DIM)
+        self.total_lbl.pack(pady=(12, 6))
+
+        ctk.CTkButton(
+            card, text="Reset", width=64, height=26, corner_radius=8,
+            fg_color="transparent", border_width=1,
+            border_color=(MUTED, DIM), text_color=(MUTED, DIM),
+            hover_color=(CARD_B_LIGHT, ACCENT_HOVER),
+            font=self._body(12), command=self._reset,
+        ).pack(pady=(0, 20))
+
+    def _build_speed_card(self, r, c, px, py):
+        card = self._card(r, c, px, py, CARD_B_DARK, CARD_B_LIGHT)
+        vcmd = (self.register(self._vnum), "%P")
+
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(expand=True)
+
+        ctk.CTkLabel(inner, text="Interval", font=self._body(16, "bold")).pack(pady=(0, 10))
+
+        row1 = ctk.CTkFrame(inner, fg_color="transparent")
+        row1.pack()
+        self.interval_entry = ctk.CTkEntry(
+            row1, width=86, height=36, corner_radius=10,
+            validate="key", validatecommand=vcmd, justify="center",
+            font=self._body(15),
+        )
+        self.interval_entry.pack(side="left", padx=(0, 10))
         
-        self.click_mode_var = ctk.StringVar(value="continuous")
-        self.radio_continuous = ctk.CTkRadioButton(row3, text="Continuous", variable=self.click_mode_var, value="continuous", command=self._on_mode_changed)
-        self.radio_continuous.pack(side="left")
+        self.interval_unit = ctk.CTkSegmentedButton(
+            row1, values=["ms", "sec"], width=100, height=36,
+            font=self._body(14), corner_radius=10,
+            fg_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_hover_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
+        )
+        self.interval_unit.pack(side="left")
         
-        self.radio_fixed = ctk.CTkRadioButton(row3, text="Times:", variable=self.click_mode_var, value="fixed_count", command=self._on_mode_changed)
-        self.radio_fixed.pack(side="left", padx=(20, 10))
+        self.humanize_var = ctk.BooleanVar(value=False)
+        self.humanize_cb = ctk.CTkCheckBox(
+            inner, text="Humanize (Randomize Delay)", variable=self.humanize_var,
+            font=self._body(12), fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            corner_radius=6, checkbox_width=20, checkbox_height=20,
+        )
+        self.humanize_cb.pack(pady=(12, 0))
+
+        ctk.CTkLabel(inner, text="Repeat", font=self._body(16, "bold")).pack(pady=(20, 10))
+
+        mode_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        mode_frame.pack(fill="x", padx=36)
         
-        self.count_entry = ctk.CTkEntry(row3, width=60, validate="key", validatecommand=vcmd, justify="center")
-        self.count_entry.pack(side="left")
+        self.mode_var = ctk.StringVar(value="continuous")
+        
+        ctk.CTkRadioButton(
+            mode_frame, text="Infinite", variable=self.mode_var, value="continuous",
+            fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            command=self._on_mode, font=self._body(14),
+        ).pack(anchor="w")
+        
+        ctk.CTkRadioButton(
+            mode_frame, text="Fixed", variable=self.mode_var, value="fixed_count",
+            fg_color=ACCENT, hover_color=ACCENT_HOVER,
+            command=self._on_mode, font=self._body(14),
+        ).pack(anchor="w", pady=(12, 6))
+        
+        self.count_entry = ctk.CTkEntry(
+            mode_frame, width=80, height=32, corner_radius=10,
+            validate="key", validatecommand=vcmd, justify="center",
+            font=self._body(14),
+        )
+        self.count_entry.pack(anchor="w", padx=(28, 0)) # Indented under "Fixed"
         self.count_entry.insert(0, "10")
 
-    def _create_position_settings(self, parent: ctk.CTkFrame):
-        frame = ctk.CTkFrame(parent, corner_radius=10)
-        frame.pack(fill="x", pady=8)
+    def _build_position_card(self, r, c, px, py):
+        card = self._card(r, c, px, py, CARD_C_DARK, CARD_C_LIGHT)
+        vcmd = (self.register(self._vnum), "%P")
 
-        self.pos_mode_var = ctk.StringVar(value="cursor")
-        vcmd = (self.register(self._validate_number_input), "%P")
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(expand=True)
 
-        top_row = ctk.CTkFrame(frame, fg_color="transparent")
-        top_row.pack(fill="x", padx=15, pady=(15, 5))
+        ctk.CTkLabel(inner, text="Position", font=self._body(16, "bold")).pack(pady=(0, 10))
         
-        ctk.CTkRadioButton(top_row, text="Cursor Position", variable=self.pos_mode_var, value="cursor", command=self._on_position_mode_changed).pack(side="left")
+        pos_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        pos_frame.pack(fill="x", padx=16)
 
-        bot_row = ctk.CTkFrame(frame, fg_color="transparent")
-        bot_row.pack(fill="x", padx=15, pady=(5, 15))
+        self.pos_var = ctk.StringVar(value="cursor")
         
-        ctk.CTkRadioButton(bot_row, text="Fixed", variable=self.pos_mode_var, value="fixed", command=self._on_position_mode_changed).pack(side="left")
-
-        self.pick_pos_btn = ctk.CTkButton(bot_row, text="Pick Pos", width=70, command=self._pick_position)
-        self.pick_pos_btn.pack(side="right", padx=(10, 0))
-
-        self.pos_y_entry = ctk.CTkEntry(bot_row, width=50, placeholder_text="Y", validate="key", validatecommand=vcmd, justify="center")
-        self.pos_y_entry.pack(side="right", padx=(5, 0))
-
-        self.pos_x_entry = ctk.CTkEntry(bot_row, width=50, placeholder_text="X", validate="key", validatecommand=vcmd, justify="center")
-        self.pos_x_entry.pack(side="right")
-
-    def _create_hotkey_settings(self, parent: ctk.CTkFrame):
-        frame = ctk.CTkFrame(parent, corner_radius=10)
-        frame.pack(fill="x", pady=8)
-
-        inner = ctk.CTkFrame(frame, fg_color="transparent")
-        inner.pack(fill="x", padx=15, pady=12)
-
-        ctk.CTkLabel(inner, text="Start/Stop Hotkey:", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        ctk.CTkRadioButton(
+            pos_frame, text="Follow Cursor", variable=self.pos_var, value="cursor",
+            fg_color=INDIGO, hover_color=ACCENT_HOVER,
+            command=self._on_pos, font=self._body(14),
+        ).pack(anchor="w")
         
-        # Merged change hotkey button and label for a cleaner UX
-        self.hotkey_btn = ctk.CTkButton(inner, text="Hotkey: F6", width=120, command=self._change_hotkey, font=ctk.CTkFont(weight="bold"))
-        self.hotkey_btn.pack(side="right")
+        ctk.CTkRadioButton(
+            pos_frame, text="Fixed XY", variable=self.pos_var, value="fixed",
+            fg_color=INDIGO, hover_color=ACCENT_HOVER,
+            command=self._on_pos, font=self._body(14),
+        ).pack(anchor="w", pady=(12, 6))
 
-    def _create_controls(self, parent: ctk.CTkFrame):
-        frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", pady=10)
-
-        # Big, bold start button
-        self.start_btn = ctk.CTkButton(
-            frame, text="START", height=45, corner_radius=8,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            fg_color="#10B981", hover_color="#059669", command=self.toggle_clicking
+        coord_row = ctk.CTkFrame(pos_frame, fg_color="transparent")
+        coord_row.pack(anchor="w", padx=(28, 0)) # Indented under "Fixed XY"
+        
+        self.pos_x = ctk.CTkEntry(
+            coord_row, width=46, height=32, corner_radius=10,
+            placeholder_text="X", validate="key", validatecommand=vcmd,
+            justify="center", font=self._body(13),
         )
-        self.start_btn.pack(fill="x")
-
-        counter_row = ctk.CTkFrame(frame, fg_color="transparent")
-        counter_row.pack(fill="x", pady=(10, 0))
+        self.pos_x.pack(side="left")
         
-        self.clicks_label = ctk.CTkLabel(counter_row, text="Clicks: 0", font=ctk.CTkFont(size=14, weight="bold"), text_color="gray")
-        self.clicks_label.pack(side="left")
+        self.pos_y = ctk.CTkEntry(
+            coord_row, width=46, height=32, corner_radius=10,
+            placeholder_text="Y", validate="key", validatecommand=vcmd,
+            justify="center", font=self._body(13),
+        )
+        self.pos_y.pack(side="left", padx=6)
         
-        reset_btn = ctk.CTkButton(counter_row, text="Reset", width=50, height=24, fg_color="transparent", border_width=1, command=self._reset_counter)
-        reset_btn.pack(side="right")
+        self.pick_btn = ctk.CTkButton(
+            coord_row, text="Pick", width=46, height=32, corner_radius=10,
+            fg_color=INDIGO, hover_color=ACCENT_HOVER,
+            font=self._body(12, "bold"), command=self._pick,
+        )
+        self.pick_btn.pack(side="left")
 
-    def _create_footer(self, parent: ctk.CTkFrame):
-        footer_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        footer_frame.pack(fill="x", side="bottom")
+    def _build_action_card(self, r, c, px, py):
+        card = self._card(r, c, px, py, CARD_D_DARK, CARD_D_LIGHT)
 
-        self.theme_selector = ctk.CTkSegmentedButton(footer_frame, values=["Dark", "Light"], command=self._change_appearance)
-        self.theme_selector.pack(side="left")
-        self.theme_selector.set("Dark")
+        inner = ctk.CTkFrame(card, fg_color="transparent")
+        inner.pack(expand=True)
 
-        version_label = ctk.CTkLabel(footer_frame, text=f"v{__version__}", text_color="gray", font=ctk.CTkFont(size=11))
-        version_label.pack(side="right")
+        ctk.CTkLabel(inner, text="Mouse Button", font=self._body(16, "bold")).pack(pady=(0, 10))
+        self.mouse_seg = ctk.CTkSegmentedButton(
+            inner, values=["Left", "Right", "Middle"],
+            width=220, height=36, font=self._body(14), corner_radius=10,
+            fg_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_hover_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            selected_color=ACCENT, selected_hover_color=ACCENT_HOVER,
+        )
+        self.mouse_seg.pack()
+        self.mouse_seg.set("Left")
 
-    def _on_mode_changed(self):
-        if self.click_mode_var.get() == "continuous":
-            self.count_entry.configure(state="disabled")
-        else:
-            self.count_entry.configure(state="normal")
+        ctk.CTkLabel(inner, text="Click Type", font=self._body(16, "bold")).pack(pady=(22, 10))
+        self.type_seg = ctk.CTkSegmentedButton(
+            inner, values=["Single", "Double"],
+            width=180, height=36, font=self._body(14), corner_radius=10,
+            fg_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            unselected_hover_color=(SEG_BG_LIGHT, SEG_BG_DARK),
+            selected_color=ACCENT_SOFT, selected_hover_color=ACCENT_HOVER,
+        )
+        self.type_seg.pack()
+        self.type_seg.set("Single")
 
-    def _on_position_mode_changed(self):
-        if self.pos_mode_var.get() == "cursor":
-            self.pos_x_entry.configure(state="disabled")
-            self.pos_y_entry.configure(state="disabled")
-            self.pick_pos_btn.configure(state="disabled")
-        else:
-            self.pos_x_entry.configure(state="normal")
-            self.pos_y_entry.configure(state="normal")
-            self.pick_pos_btn.configure(state="normal")
+    # ── Theme ────────────────────────────────────────────────────────
 
-    def _validate_number_input(self, value: str) -> bool:
-        if value == "": return True
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
-
-    def _change_appearance(self, mode: str):
-        ctk.set_appearance_mode(mode.lower())
-        self._config.set("appearance_mode", mode.lower())
+    def _cycle_theme(self):
+        themes = ["System", "Dark", "Light"]
+        idx = themes.index(self._current_theme)
+        next_theme = themes[(idx + 1) % len(themes)]
+        
+        self._current_theme = next_theme
+        ctk.set_appearance_mode(next_theme)
+        self._config.set("appearance_mode", next_theme)
         self._config.save()
+        
+        self.theme_btn.configure(text=f"Theme: {next_theme}")
 
-    def _reset_counter(self):
-        self.current_clicks = 0
+    # ── Callbacks ────────────────────────────────────────────────────
+
+    def _vnum(self, v):
+        if v == "": return True
+        try: float(v); return True
+        except ValueError: return False
+
+    def _on_mode(self):
+        self.count_entry.configure(
+            state="normal" if self.mode_var.get() == "fixed_count" else "disabled"
+        )
+
+    def _on_pos(self):
+        fixed = self.pos_var.get() == "fixed"
+        st = "normal" if fixed else "disabled"
+        self.pos_x.configure(state=st)
+        self.pos_y.configure(state=st)
+        self.pick_btn.configure(state="normal" if fixed else "disabled")
+
+    def _reset(self):
         self.click_engine.reset_counter()
-        self.clicks_label.configure(text="Clicks: 0")
+        self.total_lbl.configure(text="Total: 0")
+        self.cps_val.configure(text="0")
 
-    def _pick_position(self):
+    def _pick(self):
         if self.picking_position: return
         self.picking_position = True
-        self.pick_pos_btn.configure(text="Click...", fg_color="#F59E0B")
+        self.pick_btn.configure(text="...", fg_color=AMBER)
 
-        def start_listener():
-            def on_click(x, y, button, pressed):
+        def go():
+            def on_click(x, y, btn, pressed):
                 if pressed:
                     self._mouse_listener.stop()
-                    self.after(0, lambda: self._on_position_picked(x, y))
+                    self.after(0, lambda: self._picked(x, y))
                     return False
-
             self._mouse_listener = mouse.Listener(on_click=on_click)
             self._mouse_listener.start()
+        self.after(200, go)
 
-        self.after(200, start_listener)
-
-    def _on_position_picked(self, x: float, y: float):
+    def _picked(self, x, y):
         self.picking_position = False
-        self.pos_x_entry.configure(state="normal")
-        self.pos_y_entry.configure(state="normal")
-        self.pos_x_entry.delete(0, "end")
-        self.pos_x_entry.insert(0, str(int(x)))
-        self.pos_y_entry.delete(0, "end")
-        self.pos_y_entry.insert(0, str(int(y)))
-        self.pick_pos_btn.configure(text="Pick Pos", fg_color=["#3B8ED0", "#1F6AA5"])
+        self.pos_x.configure(state="normal")
+        self.pos_y.configure(state="normal")
+        self.pos_x.delete(0, "end"); self.pos_x.insert(0, str(int(x)))
+        self.pos_y.delete(0, "end"); self.pos_y.insert(0, str(int(y)))
+        self.pick_btn.configure(text="Pick", fg_color=INDIGO)
 
     def _change_hotkey(self):
-        self.hotkey_btn.configure(text="Listening (ESC cancels)", fg_color="#F59E0B", state="disabled")
-        self.after(200, self._start_recording_hotkey)
+        self.hotkey_btn.configure(text="...", fg_color=AMBER, state="disabled")
+        self.after(200, lambda: self.hotkey_manager.start_recording(
+            callback=lambda k: self.after(0, lambda: self._hotkey_done(k))
+        ))
 
-    def _start_recording_hotkey(self):
-        self.hotkey_manager.start_recording(
-            callback=lambda key_str: self.after(0, lambda: self._on_hotkey_recorded(key_str))
-        )
-
-    def _on_hotkey_recorded(self, key_str: str):
+    def _hotkey_done(self, key_str):
         if key_str == "esc":
-            current_hk = self.hotkey_manager.hotkey
-            self.hotkey_btn.configure(text=f"Hotkey: {current_hk.upper()}", fg_color=["#3B8ED0", "#1F6AA5"], state="normal")
+            hk = self.hotkey_manager.hotkey
+            self.hotkey_btn.configure(text=hk.upper(), fg_color=ACCENT, state="normal")
             return
-            
         self.hotkey_manager.set_hotkey(key_str)
         self._config.set("hotkey", key_str)
         self._config.save()
-        self.hotkey_btn.configure(text=f"Hotkey: {key_str.upper()}", fg_color=["#3B8ED0", "#1F6AA5"], state="normal")
+        self.hotkey_btn.configure(text=key_str.upper(), fg_color=ACCENT, state="normal")
+
+    # ── Click Engine ─────────────────────────────────────────────────
 
     def toggle_clicking(self):
-        self.after(0, self._do_toggle)
+        self.after(0, self._toggle)
 
-    def _do_toggle(self):
+    def _toggle(self):
         if self.is_running:
             self.click_engine.stop()
-            self._update_status(running=False)
+            self._set_status(False)
         else:
-            try:
-                interval_val = float(self.interval_entry.get())
-            except ValueError:
-                interval_val = 100.0
-                
-            unit = self.interval_unit.get()
-            
-            interval_ms = float(interval_val * 1000) if unit == "sec" else float(interval_val)
+            try: iv = float(self.interval_entry.get())
+            except ValueError: iv = 100.0
+            ms = float(iv * 1000) if self.interval_unit.get() == "sec" else float(iv)
 
-            btn = self.mouse_btn_var.get().lower()
-            c_type = "double" if self.click_type_var.get() == "Double" else "single"
-            c_mode = self.click_mode_var.get()
-            try:
-                t_count = int(self.count_entry.get())
-            except ValueError:
-                t_count = 10
-            p_mode = self.pos_mode_var.get()
-            try:
-                f_x, f_y = int(self.pos_x_entry.get()), int(self.pos_y_entry.get())
-            except ValueError:
-                f_x, f_y = 0, 0
+            try: tc = int(self.count_entry.get())
+            except ValueError: tc = 10
+            try: fx, fy = int(self.pos_x.get()), int(self.pos_y.get())
+            except ValueError: fx, fy = 0, 0
 
             self.click_engine.configure(
-                interval_ms=interval_ms, button_str=btn, click_type=c_type,
-                click_mode=c_mode, target_count=t_count, position_mode=p_mode,
-                fixed_position=(f_x, f_y),
+                interval_ms=ms,
+                button_str=self.mouse_seg.get().lower(),
+                click_type="double" if self.type_seg.get() == "Double" else "single",
+                click_mode=self.mode_var.get(),
+                target_count=tc,
+                position_mode=self.pos_var.get(),
+                fixed_position=(fx, fy),
+                humanize=self.humanize_var.get(),
             )
             self.click_engine.start()
-            self._update_status(running=True)
-            self._save_settings_from_ui()
+            self._set_status(True)
+            self._save_settings()
 
-    def _update_status(self, running: bool):
+    def _set_status(self, running):
         self.is_running = running
         if running:
-            self.status_label.configure(text="Running", text_color="#10B981")
-            self.start_btn.configure(text="STOP", fg_color="#EF4444", hover_color="#B91C1C")
+            self.status_label.configure(text=" RUNNING ", fg_color=GREEN)
+            self.start_btn.configure(text="S T O P", fg_color=RED, hover_color=RED_HOVER)
             self.interval_entry.configure(state="disabled")
             self.count_entry.configure(state="disabled")
-            self.mouse_btn_menu.configure(state="disabled")
-            self.click_type_menu.configure(state="disabled")
             self.hotkey_btn.configure(state="disabled")
+            self.humanize_cb.configure(state="disabled")
         else:
-            self.status_label.configure(text="Stopped", text_color="#EF4444")
-            self.start_btn.configure(text="START", fg_color="#10B981", hover_color="#059669")
+            self.status_label.configure(text=" STOPPED ", fg_color=RED)
+            self.start_btn.configure(text="S T A R T", fg_color=ACCENT, hover_color=ACCENT_HOVER)
             self.interval_entry.configure(state="normal")
-            self.mouse_btn_menu.configure(state="normal")
-            self.click_type_menu.configure(state="normal")
             self.hotkey_btn.configure(state="normal")
-            self._on_mode_changed()
-
-    def _on_click_callback(self, count: int):
-        self.current_clicks = count
+            self.humanize_cb.configure(state="normal")
+            self._on_mode()
 
     def _on_engine_stopped(self):
-        self.after(0, lambda: self._update_status(running=False))
+        self.after(0, lambda: self._set_status(False))
 
-    def _poll_updates(self):
-        self.clicks_label.configure(text=f"Clicks: {self.current_clicks}")
-        self.after(50, self._poll_updates)
+    def _poll(self):
+        self.cps_val.configure(text=str(self.click_engine.current_cps))
+        self.total_lbl.configure(text=f"Total: {self.click_engine.click_count:,}")
+        self.after(100, self._poll)
 
-    def _load_settings_to_ui(self):
-        interval = self._config.get("interval", 100)
-        self.interval_entry.delete(0, "end")
-        self.interval_entry.insert(0, str(interval))
-        
-        unit = self._config.get("interval_unit", "ms")
-        self.interval_unit.set(unit if unit in ["ms", "sec"] else "ms")
-        
-        btn = self._config.get("mouse_button", "left")
-        self.mouse_btn_var.set({"left":"Left","right":"Right","middle":"Middle"}.get(btn, "Left"))
-        
-        c_type = self._config.get("click_type", "single")
-        self.click_type_var.set("Double" if c_type == "double" else "Single")
-        
-        mode = self._config.get("click_mode", "continuous")
-        self.click_mode_var.set(mode)
-        self._on_mode_changed()
-        
-        count = self._config.get("click_count", 10)
-        self.count_entry.delete(0, "end")
-        self.count_entry.insert(0, str(count))
-        
-        pos_mode = self._config.get("position_mode", "cursor")
-        self.pos_mode_var.set(pos_mode)
-        self._on_position_mode_changed()
-        
-        fx, fy = self._config.get("fixed_x", 0), self._config.get("fixed_y", 0)
-        self.pos_x_entry.delete(0, "end"); self.pos_x_entry.insert(0, str(fx))
-        self.pos_y_entry.delete(0, "end"); self.pos_y_entry.insert(0, str(fy))
-        
-        hk = self._config.get("hotkey", "f6")
-        self.hotkey_btn.configure(text=f"Hotkey: {hk.upper()}")
+    # ── Persistence ──────────────────────────────────────────────────
+
+    def _load_settings(self):
+        c = self._config
+
+        iv = c.get("interval", 100)
+        self.interval_entry.delete(0, "end"); self.interval_entry.insert(0, str(iv))
+        u = c.get("interval_unit", "ms")
+        self.interval_unit.set(u if u in ("ms", "sec") else "ms")
+
+        self.humanize_var.set(c.get("humanize", False))
+
+        b = c.get("mouse_button", "left")
+        self.mouse_seg.set({"left":"Left","right":"Right","middle":"Middle"}.get(b,"Left"))
+
+        ct = c.get("click_type", "single")
+        self.type_seg.set("Double" if ct == "double" else "Single")
+
+        m = c.get("click_mode", "continuous")
+        self.mode_var.set(m); self._on_mode()
+
+        cnt = c.get("click_count", 10)
+        self.count_entry.delete(0, "end"); self.count_entry.insert(0, str(cnt))
+
+        pm = c.get("position_mode", "cursor")
+        self.pos_var.set(pm); self._on_pos()
+
+        self.pos_x.delete(0, "end"); self.pos_x.insert(0, str(c.get("fixed_x", 0)))
+        self.pos_y.delete(0, "end"); self.pos_y.insert(0, str(c.get("fixed_y", 0)))
+
+        hk = c.get("hotkey", "f6")
+        self.hotkey_btn.configure(text=hk.upper())
         self.hotkey_manager.set_hotkey(hk)
-        
-        app_mode = self._config.get("appearance_mode", "dark")
-        ctk.set_appearance_mode(app_mode)
-        self.theme_selector.set(app_mode.capitalize())
 
-    def _save_settings_from_ui(self):
-        try: self._config.set("interval", float(self.interval_entry.get()))
+        theme = c.get("appearance_mode", "System")
+        self._current_theme = theme
+        self.theme_btn.configure(text=f"Theme: {theme}")
+
+    def _save_settings(self):
+        c = self._config
+        try: c.set("interval", float(self.interval_entry.get()))
         except ValueError: pass
-        self._config.set("interval_unit", self.interval_unit.get())
-        self._config.set("mouse_button", self.mouse_btn_var.get().lower())
-        self._config.set("click_type", "double" if self.click_type_var.get() == "Double" else "single")
-        self._config.set("click_mode", self.click_mode_var.get())
-        try: self._config.set("click_count", int(self.count_entry.get()))
+        c.set("interval_unit", self.interval_unit.get())
+        c.set("humanize", self.humanize_var.get())
+        c.set("mouse_button", self.mouse_seg.get().lower())
+        c.set("click_type", "double" if self.type_seg.get() == "Double" else "single")
+        c.set("click_mode", self.mode_var.get())
+        try: c.set("click_count", int(self.count_entry.get()))
         except ValueError: pass
-        self._config.set("position_mode", self.pos_mode_var.get())
+        c.set("position_mode", self.pos_var.get())
         try:
-            self._config.set("fixed_x", int(self.pos_x_entry.get()))
-            self._config.set("fixed_y", int(self.pos_y_entry.get()))
+            c.set("fixed_x", int(self.pos_x.get()))
+            c.set("fixed_y", int(self.pos_y.get()))
         except ValueError: pass
-        
-        hk_text = self.hotkey_btn.cget("text").replace("Hotkey: ", "").lower()
-        self._config.set("hotkey", hk_text)
-        self._config.save()
+        hk = self.hotkey_btn.cget("text").lower()
+        if hk != "...": c.set("hotkey", hk)
+        c.save()
 
     def _on_close(self):
-        self._save_settings_from_ui()
+        self._save_settings()
         self.click_engine.stop()
         self.hotkey_manager.stop()
         if self._mouse_listener: self._mouse_listener.stop()
         self.destroy()
+
 
 def main():
     app = ClickForgeApp()

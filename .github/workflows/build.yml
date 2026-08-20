@@ -1,0 +1,97 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: ClickForge-Windows
+            asset_name: ClickForge-Windows.zip
+          - os: macos-latest
+            artifact_name: ClickForge-macOS
+            asset_name: ClickForge-macOS.zip
+          - os: ubuntu-latest
+            artifact_name: ClickForge-Linux
+            asset_name: ClickForge-Linux.zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Use 3.11 for broad compatibility
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk libx11-dev
+
+      - name: Build executable with PyInstaller
+        run: pyinstaller clickforge.spec --clean -y
+
+      - name: Prepare Windows Artifact
+        if: runner.os == 'Windows'
+        run: |
+          Compress-Archive -Path dist/ClickForge/* -DestinationPath ${{ matrix.asset_name }}
+
+      - name: Prepare macOS Artifact
+        if: runner.os == 'macOS'
+        run: |
+          # Compress the .app bundle
+          cd dist
+          zip -r ../${{ matrix.asset_name }} ClickForge.app
+
+      - name: Prepare Linux Artifact
+        if: runner.os == 'Linux'
+        run: |
+          cd dist/ClickForge
+          zip -r ../../${{ matrix.asset_name }} .
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_name }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all workflow run artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/ClickForge-Windows/ClickForge-Windows.zip
+            artifacts/ClickForge-macOS/ClickForge-macOS.zip
+            artifacts/ClickForge-Linux/ClickForge-Linux.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,3 +4,5 @@ customtkinter>=5.2.0
 pynput>=1.7.6
 # For determining appropriate platform-specific user data directories
 platformdirs>=4.0.0
+# For icon rendering
+Pillow>=10.0.0

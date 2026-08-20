@@ -6,7 +6,7 @@
   **A modern, minimalist, ridiculously fast cross-platform auto-clicker built with Python.**
 
   [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-  [![Platform: Windows (macOS/Linux planned)](https://img.shields.io/badge/platform-Windows%20Only%20(For%20Now)-blue)](#)
+  [![Platform: Windows | macOS | Linux](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](#)
   [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 </div>
 
@@ -14,12 +14,13 @@
 
 ClickForge is an open-source auto-clicker designed to be powerful enough for power users, but simple enough for anyone to use. Built as a vibe-coded learning resource, it solves common bottlenecks in Python desktop apps to achieve **200+ Clicks Per Second (CPS)** while maintaining a clean, modern GUI.
 
-> **Note:** ClickForge is currently fully optimized and working for **Windows**. Support for macOS and Linux is on the roadmap and will be added in future updates!
+> **Update (v2.0):** ClickForge is now fully supported on **Windows, macOS, and Linux!** Every release is automatically built in the cloud via GitHub Actions.
 
 ## ✨ Features
 
 - 🚀 **Extreme Performance:** Bypasses standard library limitations on Windows using direct `ctypes` (`SendInput`) and microsecond spin-waiting to achieve true 1ms (and sub-millisecond) delays.
-- 🎨 **Minimalist UI:** A beautiful, responsive interface powered by `CustomTkinter` featuring seamless Dark/Light modes.
+- 🎨 **Premium UI:** A stunning, responsive Bento Grid interface powered by `CustomTkinter`, featuring Google's Lora font and smooth Dark/Light modes.
+- 👨 **Humanize Mode (Anti-Cheat Evasion):** Optionally add a ±15% randomized jitter to your click intervals to perfectly simulate human imperfection.
 - ⌨️ **Smart Hotkeys:** Global start/stop hotkey (default `F6`) with easy, bug-free rebinding.
 - 🎯 **Advanced Positioning:** Click at your active cursor, or pick a fixed coordinate on your screen.
 - ⏱️ **Precision Intervals:** Supports floating-point intervals (e.g., `0.5 ms`) for when you need to push the absolute limits.
@@ -28,12 +29,12 @@ ClickForge is an open-source auto-clicker designed to be powerful enough for pow
 
 ## 🚀 Download & Run
 
-### For Regular Users (Windows)
 1. Go to the **[Releases](../../releases)** tab on GitHub.
-2. Download the latest `ClickForge.exe`.
-3. Run it! No installation required.
-
-*(macOS and Linux binaries coming soon!)*
+2. Download the version for your operating system:
+   - **Windows:** Download `ClickForge-Windows.zip`, extract, and run `ClickForge.exe`
+   - **macOS:** Download `ClickForge-macOS.zip`, extract, and run `ClickForge.app`
+   - **Linux:** Download `ClickForge-Linux.zip`, extract, and run the binary
+3. No installation required!
 
 ---
 

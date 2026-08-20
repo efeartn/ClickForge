@@ -1,18 +1,16 @@
 """
 Click engine for ClickForge.
-
-This module contains the ClickEngine class, which performs mouse clicks
-in a background thread. It uses native ctypes on Windows for maximum speed
-(200+ CPS) and falls back to pynput on macOS/Linux.
+Uses winmm timeBeginPeriod for 1ms thread resolution on Windows,
+plus a high-precision spin-wait and real-time CPS tracking.
 """
 
 import threading
 import time
 import sys
+import collections
 from typing import Optional, Callable, Tuple
 from pynput.mouse import Button, Controller as MouseController
 
-# --- Windows Fast Clicks Setup ---
 IS_WINDOWS = sys.platform.startswith('win')
 if IS_WINDOWS:
     import ctypes
@@ -30,7 +28,6 @@ if IS_WINDOWS:
     class Input(ctypes.Structure):
         _fields_ = [("type", ctypes.c_ulong), ("ii", Input_I)]
 
-    # Windows Mouse Event Flags
     MOUSEEVENTF_LEFTDOWN = 0x0002
     MOUSEEVENTF_LEFTUP = 0x0004
     MOUSEEVENTF_RIGHTDOWN = 0x0008
@@ -63,7 +60,6 @@ if IS_WINDOWS:
         for _ in range(clicks):
             ctypes.windll.user32.SendInput(2, p_inputs, size)
 
-
 class ClickEngine:
     def __init__(
         self,
@@ -77,6 +73,9 @@ class ClickEngine:
         self._click_count: int = 0
         self._lock = threading.Lock()
 
+        # Real-time CPS tracking
+        self._recent_clicks = collections.deque(maxlen=5000)
+
         self._on_click = on_click
         self._on_stopped = on_stopped
 
@@ -88,6 +87,7 @@ class ClickEngine:
         self.target_count: int = 10
         self.position_mode: str = "cursor"
         self.fixed_position: Tuple[int, int] = (0, 0)
+        self.humanize: bool = False
 
     def configure(
         self,
@@ -98,6 +98,7 @@ class ClickEngine:
         target_count: int,
         position_mode: str,
         fixed_position: Tuple[int, int],
+        humanize: bool = False,
     ) -> None:
         if self.is_running:
             return
@@ -111,6 +112,7 @@ class ClickEngine:
         self.target_count = max(1, target_count)
         self.position_mode = position_mode
         self.fixed_position = fixed_position
+        self.humanize = humanize
 
     def start(self) -> None:
         if self.is_running:
@@ -119,6 +121,10 @@ class ClickEngine:
         self._stop_event.clear()
         self.reset_counter()
 
+        if IS_WINDOWS:
+            # Tell Windows to increase thread wake precision to 1ms (supercharges time.sleep/wait)
+            ctypes.windll.winmm.timeBeginPeriod(1)
+
         self._thread = threading.Thread(target=self._click_loop, daemon=True)
         self._thread.start()
 
@@ -126,7 +132,6 @@ class ClickEngine:
         self._stop_event.set()
 
     def _click_loop(self) -> None:
-        # Optimization: Pre-evaluate conditions to avoid loop overhead
         is_fixed_pos = (self.position_mode == "fixed")
         is_fixed_count = (self.click_mode == "fixed_count")
         is_double = (self.click_type == "double")
@@ -134,12 +139,10 @@ class ClickEngine:
 
         while not self._stop_event.is_set():
             if is_fixed_pos:
-                try:
-                    self._mouse.position = self.fixed_position
-                except Exception:
-                    pass
+                try: self._mouse.position = self.fixed_position
+                except Exception: pass
 
-            # Fast clicking
+            # Perform the click
             try:
                 if IS_WINDOWS:
                     windows_fast_click(self.button_str, is_double)
@@ -149,10 +152,12 @@ class ClickEngine:
             except Exception:
                 pass
 
-            # Update count
+            # Update metrics
+            now = time.perf_counter()
             with self._lock:
                 self._click_count += 1
                 current_count = self._click_count
+            self._recent_clicks.append(now)
 
             if self._on_click:
                 self._on_click(current_count)
@@ -163,25 +168,50 @@ class ClickEngine:
                     self._on_stopped()
                 break
 
-            self._precise_wait(interval_sec)
+            import random
+            if self.humanize:
+                # Add up to +/- 15% random jitter to the interval to simulate human imperfection
+                jitter = interval_sec * random.uniform(-0.15, 0.15)
+                wait_time = max(0.001, interval_sec + jitter)
+            else:
+                wait_time = interval_sec
+
+            self._precise_wait(wait_time)
+
+        # Cleanup
+        if IS_WINDOWS:
+            ctypes.windll.winmm.timeEndPeriod(1)
 
     def _precise_wait(self, seconds: float) -> None:
-        if seconds <= 0:
-            return
+        if seconds <= 0: return
         target_time = time.perf_counter() + seconds
 
-        if seconds > 0.020:
-            sleep_duration = seconds - 0.020
-            if self._stop_event.wait(sleep_duration):
+        # Because of timeBeginPeriod(1), Windows Event.wait() is now accurate to ~1-2ms!
+        # We can safely use a tiny 2ms margin instead of 20ms, freeing up tons of CPU.
+        if seconds > 0.002:
+            if self._stop_event.wait(seconds - 0.002):
                 return
         
+        # Spin-wait the last 2ms for microsecond perfection
         while time.perf_counter() < target_time:
             if self._stop_event.is_set():
                 return
+            time.sleep(0) # Yield thread to prevent 100% CPU starvation in target apps
 
     def reset_counter(self) -> None:
         with self._lock:
             self._click_count = 0
+            self._recent_clicks.clear()
+
+    @property
+    def current_cps(self) -> int:
+        """Returns the actual clicks performed in the last 1.0 seconds."""
+        now = time.perf_counter()
+        # Clean up old timestamps from the deque (using a local loop to not block)
+        while self._recent_clicks and self._recent_clicks[0] < now - 1.0:
+            try: self._recent_clicks.popleft()
+            except IndexError: break
+        return len(self._recent_clicks)
 
     @property
     def is_running(self) -> bool:
