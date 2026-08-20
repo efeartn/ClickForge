@@ -94,3 +94,5 @@ Contributions are welcome! Whether it's porting the high-speed `SendInput` logic
 ## 📝 License
 
 Distributed under the MIT License. See `LICENSE` for more information.
+
+Note: Windows may show a SmartScreen warning because this is an indie app. Click 'More info' -> 'Run anyway' to bypass it.
