@@ -6,7 +6,7 @@ First off, thank you for considering contributing to ClickForge! It's people lik
 
 1. **Fork and Clone**: Fork the repository on GitHub and clone it locally.
    ```bash
-   git clone https://github.com/YOUR_USERNAME/ClickForge.git
+   git clone https://github.com/efeartn/ClickForge.git
    cd ClickForge
    ```
 2. **Create a Virtual Environment**:

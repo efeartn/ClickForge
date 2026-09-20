@@ -385,7 +385,7 @@ class ClickForgeApp(ctk.CTk):
     # ── Callbacks ────────────────────────────────────────────────────
 
     def _vnum(self, v):
-        if v == "": return True
+        if v == "" or v == "-": return True
         try: float(v); return True
         except ValueError: return False
 

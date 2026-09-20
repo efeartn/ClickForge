@@ -15,7 +15,8 @@ authors = [
 dependencies = [
     "customtkinter>=5.2.0",
     "pynput>=1.7.6",
-    "platformdirs>=4.0.0"
+    "platformdirs>=4.0.0",
+    "Pillow>=10.0.0"
 ]
 
 [project.optional-dependencies]
@@ -25,9 +26,9 @@ macos = ["pyobjc-framework-ApplicationServices>=10.0"]
 clickforge = "clickforge.app:main"
 
 [project.urls]
-Homepage = "https://github.com/username/ClickForge"
-Repository = "https://github.com/username/ClickForge.git"
-Issues = "https://github.com/username/ClickForge/issues"
+Homepage = "https://github.com/efeartn/ClickForge"
+Repository = "https://github.com/efeartn/ClickForge.git"
+Issues = "https://github.com/efeartn/ClickForge/issues"
 
 [tool.setuptools.dynamic]
 version = {attr = "clickforge.__version__"}

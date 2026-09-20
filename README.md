@@ -50,7 +50,7 @@ ClickForge is built to be a great learning resource for Python GUI and automatio
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/ClickForge.git
+   git clone https://github.com/efeartn/ClickForge.git
    cd ClickForge
    ```
 

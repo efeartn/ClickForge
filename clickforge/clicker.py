@@ -7,6 +7,7 @@ plus a high-precision spin-wait and real-time CPS tracking.
 import threading
 import time
 import sys
+import random
 import collections
 from typing import Optional, Callable, Tuple
 from pynput.mouse import Button, Controller as MouseController
@@ -154,10 +155,12 @@ class ClickEngine:
 
             # Update metrics
             now = time.perf_counter()
+            clicks_performed = 2 if is_double else 1
             with self._lock:
-                self._click_count += 1
+                self._click_count += clicks_performed
                 current_count = self._click_count
-            self._recent_clicks.append(now)
+            for _ in range(clicks_performed):
+                self._recent_clicks.append(now)
 
             if self._on_click:
                 self._on_click(current_count)
@@ -168,7 +171,6 @@ class ClickEngine:
                     self._on_stopped()
                 break
 
-            import random
             if self.humanize:
                 # Add up to +/- 15% random jitter to the interval to simulate human imperfection
                 jitter = interval_sec * random.uniform(-0.15, 0.15)

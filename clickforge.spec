@@ -47,7 +47,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='assets/icon.ico',
+    icon='assets/icon.ico' if sys.platform != 'darwin' else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -70,7 +70,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='ClickForge.app',
-        icon='assets/icon.ico',
+        icon=None,
         bundle_identifier='com.efeartn.clickforge',
         info_plist={
             'NSHighResolutionCapable': 'True',
