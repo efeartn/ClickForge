@@ -6,22 +6,23 @@ import customtkinter
 block_cipher = None
 ctk_path = os.path.dirname(customtkinter.__file__)
 
-hidden_imports = ['customtkinter']
-if sys.platform.startswith('win'):
-    hidden_imports.extend(['pynput.keyboard._win32', 'pynput.mouse._win32'])
-elif sys.platform == 'darwin':
-    hidden_imports.extend(['pynput.keyboard._darwin', 'pynput.mouse._darwin'])
+hidden_imports = ["customtkinter", "PIL", "PIL._tkinter_finder"]
+if sys.platform.startswith("win"):
+    hidden_imports.extend(["pynput.keyboard._win32", "pynput.mouse._win32"])
+elif sys.platform == "darwin":
+    hidden_imports.extend(["pynput.keyboard._darwin", "pynput.mouse._darwin"])
 else:
-    hidden_imports.extend(['pynput.keyboard._xorg', 'pynput.mouse._xorg'])
+    hidden_imports.extend(["pynput.keyboard._xorg", "pynput.mouse._xorg"])
 
 a = Analysis(
-    ['main.py'],
+    ["main.py"],
     pathex=[],
     binaries=[],
     datas=[
-        (ctk_path, 'customtkinter'),
-        ('assets/icon.ico', 'assets'),
-        ('assets/fonts', 'assets/fonts'),
+        (ctk_path, "customtkinter"),
+        ("assets/icon.ico", "assets"),
+        ("assets/icon.png", "assets"),
+        ("assets/logo.svg", "assets"),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -41,13 +42,13 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='ClickForge' if sys.platform != 'darwin' else 'ClickForge_Mac',
+    name="ClickForge" if sys.platform != "darwin" else "ClickForge_Mac",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=False,
-    icon='assets/icon.ico' if sys.platform != 'darwin' else None,
+    icon="assets/icon.ico" if sys.platform != "darwin" else None,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
@@ -63,17 +64,17 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='ClickForge',
+    name="ClickForge",
 )
 
-if sys.platform == 'darwin':
+if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name='ClickForge.app',
+        name="ClickForge.app",
         icon=None,
-        bundle_identifier='com.efeartn.clickforge',
+        bundle_identifier="com.efeartn.clickforge",
         info_plist={
-            'NSHighResolutionCapable': 'True',
-            'LSBackgroundOnly': 'False',
-        }
+            "NSHighResolutionCapable": "True",
+            "LSBackgroundOnly": "False",
+        },
     )

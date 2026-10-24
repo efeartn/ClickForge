@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <!-- Dark Squircle Container -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="#111118" stroke="#272736" stroke-width="6"/>
+
+  <!-- Precision Pulse Ring & Click Sparks at Impact Point -->
+  <circle cx="172" cy="164" r="78" stroke="#7C3AED" stroke-width="16" stroke-opacity="0.32"/>
+  <path d="M 103 200 A 78 78 0 1 1 218 101" stroke="#7C3AED" stroke-width="18" stroke-linecap="round"/>
+  <line x1="92" y1="84" x2="118" y2="110" stroke="#A78BFA" stroke-width="14" stroke-linecap="round"/>
+  <line x1="172" y1="60" x2="172" y2="92" stroke="#7C3AED" stroke-width="14" stroke-linecap="round"/>
+  <line x1="68" y1="164" x2="100" y2="164" stroke="#7C3AED" stroke-width="14" stroke-linecap="round"/>
+
+  <!-- Subtle Elevation Shadow -->
+  <polygon points="178,174 216,422 280,342 416,254" fill="#06060A" fill-opacity="0.45"/>
+
+  <!-- Two-Tone Geometric Faceted Cursor Arrow -->
+  <!-- Upper-Right Facet (#A78BFA) -->
+  <polygon points="172,164 410,244 274,332" fill="#A78BFA"/>
+  <!-- Lower-Left Primary Facet (#FFFFFF) -->
+  <polygon points="172,164 274,332 210,412" fill="#FFFFFF"/>
+
+  <!-- Impact Core Dot -->
+  <circle cx="172" cy="164" r="10" fill="#FFFFFF"/>
+</svg>

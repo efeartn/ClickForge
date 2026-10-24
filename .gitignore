@@ -27,14 +27,14 @@ share/python-wheels/
 MANIFEST
 
 # PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!clickforge.spec
 
-# Installer logs
+# Logs & temporary files
 pip-log.txt
 pip-delete-this-directory.txt
+*.log
 
 # Unit test / coverage reports
 htmlcov/
@@ -60,20 +60,17 @@ ENV/
 env.bak/
 venv.bak/
 
-# IDEs
+# IDEs & OS files
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# OS files
 .DS_Store
 Thumbs.db
 
-# User settings
+# Local user config
 config.json
 
-# --- Exceptions (Force Track) ---
+# Tracked brand assets
 !assets/
 !assets/*
-!clickforge.spec
