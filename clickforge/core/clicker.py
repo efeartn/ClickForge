@@ -114,6 +114,11 @@ class ClickEngine:
         return t is not None and t.is_alive()
 
     @property
+    def is_active(self) -> bool:
+        """Running and not already asked to stop (what the UI should show)."""
+        return self.is_running and not self._stop_event.is_set()
+
+    @property
     def click_count(self) -> int:
         return self._click_count
 
@@ -136,7 +141,14 @@ class ClickEngine:
         """Start a run.  Returns ``False`` if a run is already active."""
         with self._control_lock:
             if self.is_running:
-                return False
+                if not self._stop_event.is_set():
+                    return False
+                # A stop was requested but the worker is still unwinding (it
+                # exits within a few ms).  Wait briefly instead of dropping
+                # the user's start request on the floor.
+                self._thread.join(0.25)
+                if self.is_running:
+                    return False
             settings = settings.sanitized()
             self._stop_event = threading.Event()
             self._thread = threading.Thread(

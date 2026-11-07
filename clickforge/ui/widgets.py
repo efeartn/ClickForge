@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Optional, Sequence
 
+import tkinter as tk
+
 import customtkinter as ctk
 
 from clickforge.ui import theme as t
@@ -139,7 +141,15 @@ class NumberEntry(ctk.CTkEntry):
 
     def flash_error(self) -> None:
         self.configure(border_color=t.DANGER)
-        self.after(900, lambda: self._focus(self.focus_get() == self._entry))
+
+        def restore() -> None:
+            try:
+                focused = self.focus_get() == self._entry
+            except (KeyError, tk.TclError):
+                focused = False
+            self._focus(focused)
+
+        self.after(900, restore)
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
@@ -221,3 +231,80 @@ def caption(master, typo: Typography, text: str = "", mono: bool = False, **kw) 
 
 def segmented_options(keys: Sequence[str], labels: Sequence[str]) -> Dict[str, str]:
     return dict(zip(keys, labels))
+
+
+class UpdateBanner(ctk.CTkFrame):
+    """Slim, dismissible notice used by the auto-updater.
+
+    Shows one message line, an optional detail line, an optional progress bar
+    and up to three action buttons.  The owner decides when to pack it.
+    """
+
+    def __init__(self, master, typo: Typography) -> None:
+        super().__init__(
+            master, fg_color=t.SURFACE, border_color=t.ACCENT, border_width=1,
+            corner_radius=t.RADIUS,
+        )
+        self._typo = typo
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(fill="x", padx=12, pady=10)
+
+        text_col = ctk.CTkFrame(body, fg_color="transparent")
+        text_col.pack(side="left", fill="x", expand=True)
+        self.title = ctk.CTkLabel(
+            text_col, text="", font=typo.body_strong, text_color=t.TEXT, anchor="w", height=18,
+        )
+        self.title.pack(fill="x")
+        self.detail = ctk.CTkLabel(
+            text_col, text="", font=typo.caption, text_color=t.TEXT_MUTED, anchor="w",
+            height=16, justify="left", wraplength=210,
+        )
+        self.detail.pack(fill="x")
+        self.progress = ctk.CTkProgressBar(
+            text_col, height=4, corner_radius=2, fg_color=t.FIELD, progress_color=t.ACCENT,
+        )
+        self.progress.set(0)
+
+        self._actions = ctk.CTkFrame(body, fg_color="transparent")
+        self._actions.pack(side="right", padx=(8, 0))
+        self._buttons: list = []
+
+    def show_message(
+        self,
+        title: str,
+        detail: str = "",
+        actions: Sequence[tuple] = (),
+        progress: Optional[float] = None,
+        tone: str = "accent",
+    ) -> None:
+        """``actions`` is a sequence of ``(label, callback, primary)`` tuples."""
+        border = {"accent": t.ACCENT, "danger": t.DANGER, "neutral": t.BORDER}.get(tone, t.ACCENT)
+        self.configure(border_color=border)
+        self.title.configure(text=title)
+        self.detail.configure(text=detail)
+        self.detail.pack_forget()
+        self.progress.pack_forget()
+        if detail:
+            self.detail.pack(fill="x")
+        if progress is not None:
+            self.progress.set(max(0.0, min(1.0, progress)))
+            self.progress.pack(fill="x", pady=(6, 0))
+
+        for b in self._buttons:
+            b.destroy()
+        self._buttons = []
+        for label, callback, primary in actions:
+            if primary:
+                btn = accent_button(
+                    self._actions, self._typo, label, callback,
+                    width=0, height=26, font=self._typo.label,
+                )
+            else:
+                btn = ghost_button(self._actions, self._typo, label, callback, width=0)
+                btn.configure(height=26)
+            btn.pack(side="left", padx=(6, 0))
+            self._buttons.append(btn)
+
+    def set_progress(self, fraction: float, detail: str) -> None:
+        self.progress.set(max(0.0, min(1.0, fraction)))
+        self.detail.configure(text=detail)

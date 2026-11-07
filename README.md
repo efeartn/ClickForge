@@ -24,8 +24,9 @@ ClickForge is a lightweight, open-source desktop auto-clicker engineered for det
   - **Variable Hold Duty Cycle (`min–max ms`):** Randomizes the press-to-release duration between `mouseDown` and `mouseUp` using a triangular distribution.
   - **Position Micro-Jitter (`± px`):** Distributes fixed-coordinate clicks uniformly within a configurable pixel radius.
 - **Flexible Triggering (`Toggle` & `Hold`) + Side Mouse Buttons:** Bind any keyboard key or mouse side button (`Mouse4` / `XButton1`, `Mouse5` / `XButton2`) in either Toggle or Hold-to-Click mode.
-- **Per-Monitor DPI Awareness & Interactive Coordinate Picker:** Enables Windows Per-Monitor DPI Awareness (`DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`) prior to window creation and provides a full-desktop crosshair overlay with live `X, Y` coordinates across multi-monitor setups.
+- **Per-Monitor DPI Awareness & Interactive Coordinate Picker:** Enables Windows Per-Monitor DPI Awareness (`DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`) prior to window creation, dynamically sizes the window to prevent DPI clipping, and provides a full-desktop crosshair overlay with live `X, Y` coordinates across multi-monitor setups.
 - **Interval & Target CPS Modes:** Configure speed either by time interval (`ms`, `sec`, `min`) or directly by target `CPS`, with live conversion and atomic profile presets (`Default`, `Fast`, `Humanized`, `Custom`).
+- **Verified In-App Auto-Updater:** Checks GitHub Releases in the background (or on demand from the header bar), verifies archive size and `SHA-256` digests before staging, and performs a safe in-place self-update with automatic `.cfbak` rollback on Windows packaged builds.
 
 ---
 
@@ -70,6 +71,9 @@ python main.py
 # Build instant-launch folder bundle (dist/ClickForge/)
 python build.py
 
+# Build folder bundle + release archive (dist/ClickForge-Windows.zip)
+python build.py --zip
+
 # Build standalone single-file executable (dist/ClickForge.exe)
 python build.py --onefile
 ```
@@ -84,7 +88,7 @@ python -m PyInstaller --noconfirm --clean --noconsole --onefile --name ClickForg
 
 ### Regenerating Icons & Vector Assets
 
-All brand assets (`assets/logo.svg`, `assets/icon.png`, and the multi-DPI `assets/icon.ico`) are generated deterministically via Pillow:
+All brand assets (`assets/logo.svg`, `assets/icon.png`, `assets/icon.ico`, and `assets/icon.icns`) are generated deterministically via Pillow:
 
 ```bash
 python scripts/generate_assets.py
@@ -97,6 +101,7 @@ python scripts/generate_assets.py
 ```text
 ClickForge/
 ├── assets/
+│   ├── icon.icns                 # macOS app bundle icon (1024x1024 master)
 │   ├── icon.ico                  # Multi-DPI Windows icon (16, 24, 32, 48, 64, 128, 256 px)
 │   ├── icon.png                  # 512x512 high-resolution PNG icon
 │   └── logo.svg                  # Scalable vector logo
@@ -108,9 +113,10 @@ ClickForge/
 │   │   ├── input_backend.py      # Pre-allocated ctypes Win32 SendInput + pynput fallback
 │   │   ├── system.py             # Per-Monitor v2 DPI awareness, AppUserModelID, screen bounds
 │   │   ├── timing.py             # winmm 1ms timer resolution + hybrid sleep/spin-wait
+│   │   ├── updater.py            # GitHub Releases updater, SHA-256 verifier & self-installer
 │   │   └── validation.py         # Numeric sanitizers and interval/CPS unit converters
 │   ├── ui/
-│   │   ├── main_window.py        # Main CustomTkinter window & 18 Hz telemetry poller
+│   │   ├── main_window.py        # Main CustomTkinter window, 50 Hz event loop & update banner
 │   │   ├── picker.py             # Fullscreen crosshair coordinate picker overlay
 │   │   ├── theme.py              # Light/dark surface tokens and font resolution
 │   │   └── widgets.py            # Reusable cards, segmented controls, and numeric entries
@@ -119,7 +125,7 @@ ClickForge/
 │   └── app.py                    # Application launcher
 ├── scripts/
 │   ├── build.bat                 # Windows one-command build wrapper
-│   └── generate_assets.py        # Deterministic SVG/PNG/ICO asset generator
+│   └── generate_assets.py        # Deterministic SVG/PNG/ICO/ICNS asset generator
 ├── build.py                      # Cross-platform PyInstaller build script
 ├── clickforge.spec               # PyInstaller specification
 ├── main.py                       # Root entry script

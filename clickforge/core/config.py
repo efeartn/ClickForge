@@ -43,6 +43,9 @@ DEFAULTS: Dict[str, Any] = {
     "always_on_top": False,
     "hotkey": "f6",
     "trigger_mode": "toggle",    # toggle | hold
+    "auto_update_check": True,
+    "last_update_check": 0.0,    # unix time of the last automatic check
+    "skipped_version": "",       # release the user chose to skip, e.g. "2.3.0"
     "settings": dict(PROFILE_DEFAULTS),
     "custom": dict(PROFILE_DEFAULTS),
 }
@@ -58,6 +61,8 @@ _CHOICES = {
 }
 
 PROFILE_NAMES = ("Default", "Fast", "Humanized", "Custom")
+
+_MAY_BE_EMPTY = frozenset({"skipped_version"})
 
 # Presets intentionally leave position fields alone so switching profiles
 # never discards a carefully picked coordinate.
@@ -91,7 +96,9 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
             v = float(value)
             return v if v == v and v not in (float("inf"), float("-inf")) else default
         if isinstance(default, str):
-            return value if isinstance(value, str) and value else default
+            if not isinstance(value, str):
+                return default
+            return value if (value or key in _MAY_BE_EMPTY) else default
     except (TypeError, ValueError):
         return default
     return default
@@ -100,6 +107,15 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
 def _validate_profile(data: Any) -> Dict[str, Any]:
     src = data if isinstance(data, dict) else {}
     return {k: _coerce(k, src.get(k, d), d) for k, d in PROFILE_DEFAULTS.items()}
+
+
+def normalize_profile(data: Any) -> Dict[str, Any]:
+    """Validated, comparison-friendly copy of a profile dict."""
+    out = _validate_profile(data)
+    for key, value in out.items():
+        if isinstance(value, float):
+            out[key] = round(value, 4)
+    return out
 
 
 class Config:

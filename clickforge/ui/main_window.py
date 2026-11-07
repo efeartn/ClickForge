@@ -7,9 +7,13 @@ monospace numeric inputs and telemetry, and zero decorative clutter.
 
 from __future__ import annotations
 
+import math
 import os
 import queue
+import threading
+import time
 import tkinter as tk
+import webbrowser
 from tkinter import messagebox
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -17,8 +21,9 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from clickforge import __app_name__, __version__
+from clickforge.core import updater
 from clickforge.core.clicker import ClickEngine, ClickSettings
-from clickforge.core.config import PROFILE_NAMES, Config
+from clickforge.core.config import PROFILE_NAMES, Config, normalize_profile
 from clickforge.core.hotkeys import TriggerListener, display_name
 from clickforge.core.system import prepare_process, resource_path, startup_warnings
 from clickforge.core.validation import (
@@ -39,6 +44,7 @@ from clickforge.ui.theme import (
     GLYPH_PIN,
     GLYPH_PINNED,
     GLYPH_THEME,
+    GLYPH_UPDATE,
     resolve_fonts,
 )
 from clickforge.ui.widgets import (
@@ -48,6 +54,7 @@ from clickforge.ui.widgets import (
     Segmented,
     StatusBadge,
     Typography,
+    UpdateBanner,
     accent_button,
     caption,
     ghost_button,
@@ -56,7 +63,14 @@ from clickforge.ui.widgets import (
     set_accent_enabled,
 )
 
-POLL_INTERVAL_MS = 55  # ~18 Hz UI telemetry refresh
+#: Event-queue drain rate.  Hotkey starts are handled within ~20 ms.
+POLL_INTERVAL_MS = 20
+#: Telemetry repaints every N polls (3 x 20 ms = ~16 Hz).
+TELEMETRY_EVERY = 3
+#: Minimum logical window width; the height always fits the content.
+MIN_WIDTH = 460
+#: Automatic update checks run at most this often (seconds).
+UPDATE_CHECK_INTERVAL = 6 * 60 * 60
 
 
 class ClickForgeWindow(ctk.CTk):
@@ -73,8 +87,6 @@ class ClickForgeWindow(ctk.CTk):
         super().__init__()
 
         self.title(__app_name__)
-        self.geometry("460x690")
-        self.minsize(460, 690)
         self.resizable(False, False)
         self.configure(fg_color=t.BG)
 
@@ -94,11 +106,14 @@ class ClickForgeWindow(ctk.CTk):
         self._engine = ClickEngine(
             on_stopped=lambda reason: self._events.put(("stopped", reason))
         )
+        # Stops (Hold release, panic) are executed directly on the listener
+        # thread -- engine.stop() is thread-safe -- so they never wait for the
+        # UI loop.  Starts still go through the UI, which owns the settings.
         self._hotkeys = TriggerListener(
             binding=self._config.get("hotkey"),
             on_press=lambda: self._events.put(("trigger_press", None)),
-            on_release=lambda: self._events.put(("trigger_release", None)),
-            on_panic=lambda: self._events.put(("panic", None)),
+            on_release=self._on_trigger_release_threaded,
+            on_panic=self._on_panic_threaded,
             on_recorded=lambda key: self._events.put(("recorded", key)),
         )
 
@@ -111,10 +126,22 @@ class ClickForgeWindow(ctk.CTk):
         self._picking_coords: bool = False
         self._focused_entries: int = 0
         self._loading_ui: bool = False
+        self._poll_tick: int = 0
+        self._shown_cps: Optional[Tuple[int, bool]] = None
+        self._shown_total: Optional[int] = None
+
+        # Auto-updater state
+        self._update_release: Optional[updater.ReleaseInfo] = None
+        self._staged_update: Optional[Tuple[str, str, updater.ReleaseInfo]] = None
+        self._update_busy: bool = False
+        self._update_cancel: Optional[threading.Event] = None
+        self._update_hide_job: Optional[str] = None
+        self._closing: bool = False
 
         self._build_ui()
         self._load_from_config()
         self._apply_always_on_top()
+        self._fit_to_content()
 
         # Clicking neutral background defocuses active entry fields
         self.bind_all("<Button-1>", self._on_global_click, add="+")
@@ -122,7 +149,36 @@ class ClickForgeWindow(ctk.CTk):
         self._hotkeys.start()
         self.after(POLL_INTERVAL_MS, self._poll)
         self.after(400, self._check_platform_warnings)
+        self.after(2500, self._maybe_auto_check_updates)
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ── Layout ───────────────────────────────────────────────────────
+
+    def _fit_to_content(self) -> None:
+        """Size the window to exactly fit its content.
+
+        v2.2 used a hard-coded 460x690 geometry, which clipped the footer on
+        scaled displays.  Measuring the requested size avoids that entirely.
+        """
+        self.update_idletasks()
+        width = max(
+            MIN_WIDTH,
+            int(math.ceil(self._reverse_window_scaling(self.winfo_reqwidth()))),
+        )
+        height = int(math.ceil(self._reverse_window_scaling(self.winfo_reqheight()))) + 1
+        self.geometry(f"{width}x{height}")
+
+    # ── Listener-thread callbacks ────────────────────────────────────
+
+    def _on_trigger_release_threaded(self) -> None:
+        if self._trigger_mode == "hold":
+            self._engine.stop()
+        self._events.put(("trigger_release", None))
+
+    def _on_panic_threaded(self) -> None:
+        if self._engine.is_running:
+            self._engine.stop()
+        self._events.put(("panic", None))
 
     # ── Window Icon & OS Chrome ──────────────────────────────────────
 
@@ -206,12 +262,25 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.pin_btn.pack(side="right", padx=(6, 0))
 
+        self.update_btn = icon_button(
+            hdr,
+            typo,
+            glyph=GLYPH_UPDATE,
+            fallback="Update",
+            command=lambda: self._check_for_updates(manual=True),
+        )
+        self.update_btn.pack(side="right", padx=(6, 0))
+
         self.status_badge = StatusBadge(hdr, typo)
         self.status_badge.pack(side="right")
+
+        # Update notice slot (packed on demand, right under the header)
+        self.update_banner = UpdateBanner(self, typo)
 
         # 2. Telemetry & Profile Bar
         telemetry_card = Card(self, typo)
         telemetry_card.pack(fill="x", padx=pad, pady=(0, 8))
+        self._telemetry_card = telemetry_card
 
         tel_top = ctk.CTkFrame(telemetry_card.body, fg_color="transparent")
         tel_top.pack(fill="x")
@@ -558,12 +627,17 @@ class ClickForgeWindow(ctk.CTk):
         self._hotkeys.set_suspended(suspend)
 
     def _on_global_click(self, event: tk.Event) -> None:
+        # Only defocus for clicks inside this window (not the picker overlay,
+        # and not widgets that were destroyed by their own click handler).
         widget = event.widget
-        if not isinstance(widget, tk.Entry):
-            try:
-                self.focus_set()
-            except Exception:
-                pass
+        if isinstance(widget, str) or isinstance(widget, tk.Entry):
+            return
+        try:
+            if widget.winfo_toplevel() is not self:
+                return
+            self.focus_set()
+        except (tk.TclError, KeyError, AttributeError):
+            pass
 
     # ── Interactive State & Validation ───────────────────────────────
 
@@ -658,7 +732,7 @@ class ClickForgeWindow(ctk.CTk):
         return jp, h_min, h_max, pj
 
     def _refresh_interactive_states(self) -> None:
-        running = self._engine.is_running
+        running = self._engine.is_active
         editable = not running
 
         # Top preset & speed controls
@@ -775,9 +849,11 @@ class ClickForgeWindow(ctk.CTk):
         self._config.save()
 
     def _on_preset_selected(self, preset_name: str) -> None:
-        if self._loading_ui or self._engine.is_running:
+        if self._loading_ui or self._engine.is_active:
             return
         self._current_profile = preset_name
+        if self.preset_seg.get_key() != preset_name:
+            self.preset_seg.set_key(preset_name)
         self._config.set("profile", preset_name)
         profile_data = self._config.preset(preset_name)
         self._config.set("settings", profile_data)
@@ -810,6 +886,10 @@ class ClickForgeWindow(ctk.CTk):
 
     def _update_header_buttons(self) -> None:
         has_glyphs = self._typo.fonts.icons is not None
+        has_update = (
+            self._update_release is not None
+            and updater.is_newer(self._update_release.version)
+        )
         if has_glyphs:
             self.theme_btn.configure(
                 text=GLYPH_THEME.get(self._theme_mode, GLYPH_THEME["System"])
@@ -819,6 +899,11 @@ class ClickForgeWindow(ctk.CTk):
                 text_color=t.ACCENT if self._always_on_top else t.TEXT_MUTED,
                 border_color=t.ACCENT if self._always_on_top else t.BORDER,
             )
+            self.update_btn.configure(
+                text=GLYPH_UPDATE,
+                text_color=t.ACCENT if has_update else t.TEXT_MUTED,
+                border_color=t.ACCENT if has_update else t.BORDER,
+            )
         else:
             self.theme_btn.configure(text=self._theme_mode)
             self.pin_btn.configure(
@@ -826,16 +911,23 @@ class ClickForgeWindow(ctk.CTk):
                 text_color=t.ACCENT if self._always_on_top else t.TEXT_MUTED,
                 border_color=t.ACCENT if self._always_on_top else t.BORDER,
             )
+            self.update_btn.configure(
+                text="Update",
+                text_color=t.ACCENT if has_update else t.TEXT_MUTED,
+                border_color=t.ACCENT if has_update else t.BORDER,
+            )
 
     def _reset_counters(self) -> None:
         self._engine.reset_counter()
-        self.cps_value_lbl.configure(text="0")
+        self._shown_cps = (0, False)
+        self._shown_total = 0
+        self.cps_value_lbl.configure(text="0", text_color=t.TEXT)
         self.total_value_lbl.configure(text="Total: 0")
 
     # ── Coordinate Picker & Hotkey Recording ─────────────────────────
 
     def _start_coordinate_picker(self) -> None:
-        if self._picking_coords or self._engine.is_running:
+        if self._picking_coords or self._engine.is_active:
             return
         self._picking_coords = True
         self._sync_hotkey_suspension()
@@ -853,7 +945,7 @@ class ClickForgeWindow(ctk.CTk):
             self._mark_custom_and_save()
 
     def _start_hotkey_recording(self) -> None:
-        if self._recording_hotkey or self._engine.is_running:
+        if self._recording_hotkey or self._engine.is_active:
             return
         self._recording_hotkey = True
         self._sync_hotkey_suspension()
@@ -898,13 +990,17 @@ class ClickForgeWindow(ctk.CTk):
         ).sanitized()
 
     def toggle_clicking(self) -> None:
-        if self._engine.is_running:
+        if self._engine.is_active:
             self._stop_clicking()
         else:
             self._start_clicking()
 
     def _start_clicking(self) -> None:
-        if self._engine.is_running or self._recording_hotkey or self._picking_coords:
+        if (
+            self._engine.is_active
+            or self._recording_hotkey
+            or self._picking_coords
+        ):
             return
         snapshot = self._build_settings_snapshot()
         self._save_current_settings()
@@ -916,38 +1012,59 @@ class ClickForgeWindow(ctk.CTk):
         self._refresh_interactive_states()
 
     def _poll(self) -> None:
-        # 1. Drain worker / hotkey events queued from background threads
+        if self._closing:
+            return
+        # 1. Drain worker / hotkey / updater events queued from background threads
         while True:
             try:
                 kind, payload = self._events.get_nowait()
             except queue.Empty:
                 break
-            if kind == "trigger_press":
-                if self._trigger_mode == "hold":
-                    self._start_clicking()
-                else:
-                    self.toggle_clicking()
-            elif kind == "trigger_release":
-                if self._trigger_mode == "hold" and self._engine.is_running:
-                    self._stop_clicking()
-            elif kind == "panic":
-                if self._engine.is_running:
-                    self._stop_clicking()
-            elif kind == "recorded":
-                self._finish_hotkey_recording(payload)
-            elif kind == "stopped":
-                self._refresh_interactive_states()
+            try:
+                self._handle_event(kind, payload)
+            except Exception:
+                # One bad event must never kill the poll loop.
+                pass
 
-        # 2. Update live telemetry (rolling 1-second CPS + Total Clicks)
-        cps = self._engine.cps()
-        total = self._engine.click_count
-        self.cps_value_lbl.configure(
-            text=str(cps),
-            text_color=t.ACCENT if self._engine.is_running and cps > 0 else t.TEXT,
-        )
-        self.total_value_lbl.configure(text=f"Total: {total:,}")
+        # 2. Repaint live telemetry (rolling 1-second CPS + total) only when it changed
+        self._poll_tick += 1
+        if self._poll_tick >= TELEMETRY_EVERY:
+            self._poll_tick = 0
+            cps = self._engine.cps()
+            active = self._engine.is_active and cps > 0
+            if self._shown_cps != (cps, active):
+                self._shown_cps = (cps, active)
+                self.cps_value_lbl.configure(
+                    text=str(cps), text_color=t.ACCENT if active else t.TEXT
+                )
+            total = self._engine.click_count
+            if self._shown_total != total:
+                self._shown_total = total
+                self.total_value_lbl.configure(text=f"Total: {total:,}")
 
         self.after(POLL_INTERVAL_MS, self._poll)
+
+    def _handle_event(self, kind: str, payload: Any) -> None:
+        if kind == "trigger_press":
+            if self._trigger_mode == "hold":
+                # Ignore a press whose release already arrived (quick tap).
+                if self._hotkeys.trigger_down:
+                    self._start_clicking()
+            else:
+                self.toggle_clicking()
+        elif kind in ("trigger_release", "panic", "stopped"):
+            # The stop itself already happened on the listener/worker thread.
+            self._refresh_interactive_states()
+        elif kind == "recorded":
+            self._finish_hotkey_recording(payload)
+        elif kind == "update_found":
+            self._on_update_found(payload)
+        elif kind == "update_progress":
+            self._on_update_progress(*payload)
+        elif kind == "update_ready":
+            self._on_update_ready(payload)
+        elif kind == "update_error":
+            self._on_update_error(payload)
 
     # ── Config Persistence & Presets ─────────────────────────────────
 
@@ -1023,9 +1140,17 @@ class ClickForgeWindow(ctk.CTk):
         }
 
     def _mark_custom_and_save(self) -> None:
+        """Persist edits and switch to the Custom profile -- but only if
+        something actually changed.
+
+        v2.2 called this on every focus-out and on every Start, so simply
+        pressing Start silently replaced the selected preset with "Custom".
+        """
         if self._loading_ui:
             return
-        profile = self._collect_profile_dict()
+        profile = normalize_profile(self._collect_profile_dict())
+        if profile == normalize_profile(self._config.get("settings")):
+            return
         self._current_profile = "Custom"
         self.preset_seg.set_key("Custom")
         self._config.set("profile", "Custom")
@@ -1044,7 +1169,278 @@ class ClickForgeWindow(ctk.CTk):
         self._config.set("theme", self._theme_mode)
         self._config.save()
 
+    # ── Auto-Updater ─────────────────────────────────────────────────
+
+    def _cancel_banner_timer(self) -> None:
+        if self._update_hide_job is not None:
+            try:
+                self.after_cancel(self._update_hide_job)
+            except tk.TclError:
+                pass
+            self._update_hide_job = None
+
+    def _show_banner(
+        self,
+        title: str,
+        detail: str = "",
+        actions: Tuple[tuple, ...] = (),
+        progress: Optional[float] = None,
+        tone: str = "accent",
+        auto_hide_ms: int = 0,
+    ) -> None:
+        self._cancel_banner_timer()
+        self.update_banner.show_message(
+            title=title,
+            detail=detail,
+            actions=actions,
+            progress=progress,
+            tone=tone,
+        )
+        if not self.update_banner.winfo_manager():
+            self.update_banner.pack(
+                fill="x", padx=t.PAD, pady=(0, 8), before=self._telemetry_card
+            )
+        self._fit_to_content()
+        if auto_hide_ms > 0:
+            self._update_hide_job = self.after(auto_hide_ms, self._hide_banner)
+
+    def _hide_banner(self) -> None:
+        self._cancel_banner_timer()
+        if self.update_banner.winfo_manager():
+            self.update_banner.pack_forget()
+            self._fit_to_content()
+
+    def _maybe_auto_check_updates(self) -> None:
+        if self._closing or not self._config.get("auto_update_check"):
+            return
+        last_check = float(self._config.get("last_update_check") or 0.0)
+        if time.time() - last_check < UPDATE_CHECK_INTERVAL:
+            return
+        self._check_for_updates(manual=False)
+
+    def _check_for_updates(self, manual: bool = False) -> None:
+        if self._update_busy or self._closing:
+            return
+        if manual and self._staged_update is not None:
+            staged, _workdir, _release = self._staged_update
+            if os.path.isdir(staged):
+                self._on_update_ready(self._staged_update)
+                return
+            self._staged_update = None
+
+        self._update_busy = True
+        if manual:
+            self._show_banner(
+                title="Checking for updates...",
+                detail=f"Current version: v{__version__}",
+                tone="neutral",
+            )
+
+        def worker() -> None:
+            try:
+                rel = updater.fetch_latest()
+                self._events.put(("update_found", (rel, manual)))
+            except updater.UpdateError as exc:
+                self._events.put(("update_error", (str(exc), manual)))
+            except Exception:
+                self._events.put(("update_error", ("Update check failed.", manual)))
+
+        threading.Thread(
+            target=worker, name="ClickForge-UpdateCheck", daemon=True
+        ).start()
+
+    def _on_update_found(self, payload: Tuple[updater.ReleaseInfo, bool]) -> None:
+        release, manual = payload
+        self._update_busy = False
+        self._config.set("last_update_check", time.time())
+        self._config.save()
+
+        if updater.is_newer(release.version):
+            self._update_release = release
+            self._update_header_buttons()
+            if not manual and release.version_text == self._config.get("skipped_version"):
+                return
+            self._show_banner(
+                title=f"Update available: v{release.version_text}",
+                detail=f"Installed v{__version__}",
+                actions=(
+                    ("Update", self._start_update_install, True),
+                    ("Later", self._hide_banner, False),
+                    ("Skip", self._skip_update, False),
+                ),
+                tone="accent",
+            )
+        else:
+            self._update_release = None
+            self._update_header_buttons()
+            if manual:
+                self._show_banner(
+                    title=f"You're up to date (v{__version__})",
+                    detail=f"Latest release: v{release.version_text}",
+                    actions=(("Dismiss", self._hide_banner, False),),
+                    tone="neutral",
+                    auto_hide_ms=4500,
+                )
+
+    def _skip_update(self) -> None:
+        if self._update_release is not None:
+            self._config.set("skipped_version", self._update_release.version_text)
+            self._config.save()
+        self._hide_banner()
+
+    def _open_release_page(self) -> None:
+        url = (
+            self._update_release.page_url
+            if self._update_release is not None
+            else updater.RELEASES_PAGE
+        )
+        webbrowser.open(url)
+        self._hide_banner()
+
+    def _start_update_install(self) -> None:
+        if self._update_busy or self._update_release is None:
+            return
+
+        release = self._update_release
+        can_self, reason = updater.can_self_update()
+        asset = release.asset_for_platform()
+        if not can_self or asset is None:
+            webbrowser.open(release.page_url)
+            msg = reason or "Opened GitHub Releases to download manually."
+            self._show_banner(
+                title=f"Opened v{release.version_text} release page",
+                detail=msg,
+                actions=(("Dismiss", self._hide_banner, False),),
+                tone="neutral",
+                auto_hide_ms=6000,
+            )
+            return
+
+        cancel = threading.Event()
+        self._update_cancel = cancel
+        self._update_busy = True
+        self._refresh_interactive_states()
+
+        size_hint = (
+            f"0.0 / {asset.size / 1_048_576:.1f} MB" if asset.size else "Connecting..."
+        )
+        self._show_banner(
+            title=f"Downloading v{release.version_text}...",
+            detail=size_hint,
+            actions=(("Cancel", self._cancel_update, False),),
+            progress=0.0,
+            tone="accent",
+        )
+
+        def worker() -> None:
+            last_emit = 0.0
+
+            def on_progress(received: int, total: int) -> None:
+                nonlocal last_emit
+                now = time.perf_counter()
+                if now - last_emit >= 0.05 or (total and received >= total):
+                    last_emit = now
+                    self._events.put(("update_progress", (received, total)))
+
+            try:
+                workdir = updater.new_workdir(release.version)
+                zip_path = updater.download_asset(
+                    asset, workdir, progress=on_progress, cancel=cancel
+                )
+                self._events.put(("update_progress", (-1, -1)))
+                staged = updater.stage_update(zip_path, workdir)
+                self._events.put(("update_ready", (staged, workdir, release)))
+            except updater.UpdateError as exc:
+                self._events.put(("update_error", (str(exc), True)))
+            except Exception:
+                self._events.put(("update_error", ("Failed to stage update.", True)))
+
+        threading.Thread(
+            target=worker, name="ClickForge-UpdateDownload", daemon=True
+        ).start()
+
+    def _cancel_update(self) -> None:
+        if self._update_cancel is not None:
+            self._update_cancel.set()
+
+    def _on_update_progress(self, received: int, total: int) -> None:
+        if not self.update_banner.winfo_manager():
+            return
+        if received < 0:
+            self.update_banner.set_progress(1.0, "Verifying SHA-256 & unpacking...")
+            return
+        if total > 0:
+            frac = received / total
+            detail = (
+                f"{received / 1_048_576:.1f} / {total / 1_048_576:.1f} MB "
+                f"({int(frac * 100)}%)"
+            )
+        else:
+            frac = 0.0
+            detail = f"{received / 1_048_576:.1f} MB downloaded"
+        self.update_banner.set_progress(frac, detail)
+
+    def _on_update_ready(
+        self, payload: Tuple[str, str, updater.ReleaseInfo]
+    ) -> None:
+        staged, workdir, release = payload
+        self._update_busy = False
+        self._update_cancel = None
+        self._staged_update = (staged, workdir, release)
+        self._refresh_interactive_states()
+        self._show_banner(
+            title=f"v{release.version_text} ready to install",
+            detail="Verified SHA-256 · Restarts automatically",
+            actions=(
+                ("Restart & Update", self._apply_staged_update, True),
+                ("Later", self._hide_banner, False),
+            ),
+            tone="accent",
+        )
+
+    def _apply_staged_update(self) -> None:
+        if self._staged_update is None:
+            return
+        if self._engine.is_active:
+            self._stop_clicking()
+        staged, workdir, _release = self._staged_update
+        try:
+            updater.launch_installer(staged, workdir)
+        except updater.UpdateError as exc:
+            self._on_update_error((str(exc), True))
+            return
+        self._on_close()
+
+    def _on_update_error(self, payload: Tuple[str, bool]) -> None:
+        msg, show_ui = payload
+        self._update_busy = False
+        self._update_cancel = None
+        self._refresh_interactive_states()
+        if msg == "Download cancelled.":
+            self._hide_banner()
+            return
+        if not show_ui:
+            return
+        actions: Tuple[tuple, ...]
+        if self._update_release is not None:
+            actions = (
+                ("Download", self._open_release_page, False),
+                ("Dismiss", self._hide_banner, False),
+            )
+        else:
+            actions = (("Dismiss", self._hide_banner, False),)
+        self._show_banner(
+            title="Update check failed",
+            detail=msg,
+            actions=actions,
+            tone="danger",
+        )
+
     def _on_close(self) -> None:
+        self._closing = True
+        self._cancel_banner_timer()
+        if self._update_cancel is not None:
+            self._update_cancel.set()
         try:
             self._save_current_settings()
         except Exception:

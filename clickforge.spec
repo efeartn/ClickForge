@@ -3,6 +3,9 @@ import os
 import sys
 import customtkinter
 
+sys.path.insert(0, os.path.abspath("."))
+from clickforge import __version__
+
 block_cipher = None
 ctk_path = os.path.dirname(customtkinter.__file__)
 
@@ -14,16 +17,30 @@ elif sys.platform == "darwin":
 else:
     hidden_imports.extend(["pynput.keyboard._xorg", "pynput.mouse._xorg"])
 
+datas = [
+    (ctk_path, "customtkinter"),
+    ("assets/icon.ico", "assets"),
+    ("assets/icon.png", "assets"),
+    ("assets/logo.svg", "assets"),
+]
+if os.path.exists("assets/icon.icns"):
+    datas.append(("assets/icon.icns", "assets"))
+
+if not sys.platform.startswith("win"):
+    try:
+        from PyInstaller.utils.hooks import collect_data_files
+        import certifi  # noqa: F401
+
+        datas.extend(collect_data_files("certifi"))
+        hidden_imports.append("certifi")
+    except Exception:
+        pass
+
 a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[
-        (ctk_path, "customtkinter"),
-        ("assets/icon.ico", "assets"),
-        ("assets/icon.png", "assets"),
-        ("assets/logo.svg", "assets"),
-    ],
+    datas=datas,
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -71,9 +88,11 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="ClickForge.app",
-        icon=None,
+        icon="assets/icon.icns" if os.path.exists("assets/icon.icns") else None,
         bundle_identifier="com.efeartn.clickforge",
         info_plist={
+            "CFBundleShortVersionString": __version__,
+            "CFBundleVersion": __version__,
             "NSHighResolutionCapable": "True",
             "LSBackgroundOnly": "False",
         },

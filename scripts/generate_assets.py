@@ -9,6 +9,7 @@ Outputs:
 - assets/logo.svg   (scalable vector for README and docs)
 - assets/icon.png   (512x512 high-resolution PNG)
 - assets/icon.ico   (multi-DPI Windows icon: 16, 24, 32, 48, 64, 128, 256)
+- assets/icon.icns  (macOS app bundle icon)
 """
 
 from __future__ import annotations
@@ -184,9 +185,15 @@ def main() -> None:
         append_images=frames[:-1],
         sizes=[(s, s) for s in ICO_SIZES],
     )
+
+    # macOS app bundle icon (Pillow writes ICNS on every platform).
+    icns_path = os.path.join(ASSETS_DIR, "icon.icns")
+    render_icon(1024).save(icns_path, format="ICNS")
+
     print(f"Generated: {svg_path}")
     print(f"Generated: {png_path} (512x512)")
     print(f"Generated: {ico_path} (frames: {ICO_SIZES})")
+    print(f"Generated: {icns_path} (1024x1024 master)")
 
 
 if __name__ == "__main__":

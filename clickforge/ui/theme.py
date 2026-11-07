@@ -94,3 +94,4 @@ GLYPH_PIN = "\uE718"
 GLYPH_PINNED = "\uE840"
 GLYPH_THEME = {"System": "\uE7F4", "Light": "\uE706", "Dark": "\uE708"}
 GLYPH_RESET = "\uE72C"
+GLYPH_UPDATE = "\uE896"  # Download arrow
