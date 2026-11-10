@@ -29,6 +29,8 @@ clickforge = "clickforge.app:main"
 [project.urls]
 Homepage = "https://github.com/efeartn/ClickForge"
 Repository = "https://github.com/efeartn/ClickForge.git"
+Releases = "https://github.com/efeartn/ClickForge/releases"
+Changelog = "https://github.com/efeartn/ClickForge/blob/main/CHANGELOG.md"
 Issues = "https://github.com/efeartn/ClickForge/issues"
 
 [tool.setuptools.packages.find]
