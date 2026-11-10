@@ -93,16 +93,18 @@ class CoordinatePicker:
         )
 
         # Floating coordinate readout pill near cursor
-        self._pill_bg = canvas.create_rectangle(0, 0, 130, 28, fill="#16161A", outline="#A78BFA", width=1)
+        self._pill_bg = canvas.create_rectangle(0, 0, 148, 28, fill="#16161A", outline="#A78BFA", width=1)
         self._pill_txt = canvas.create_text(
             0, 0, text="X: 0  Y: 0", fill="#FFFFFF", font=(self._fonts.mono, 10, "bold")
         )
 
         canvas.bind("<Motion>", self._on_motion)
         canvas.bind("<ButtonPress-1>", self._on_left_click)
+        canvas.bind("<ButtonPress-2>", self._on_cancel)
         canvas.bind("<ButtonPress-3>", self._on_cancel)
         top.bind("<Escape>", self._on_cancel)
         top.bind("<Return>", self._on_enter)
+        top.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         top.deiconify()
         top.lift()

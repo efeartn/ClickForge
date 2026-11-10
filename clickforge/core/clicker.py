@@ -101,6 +101,7 @@ class ClickEngine:
         self._timestamps: collections.deque = collections.deque(maxlen=8192)
         # Button currently held down by the worker (for the failsafe).
         self._held: Optional[str] = None
+        self._held_lock = threading.Lock()
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -171,12 +172,18 @@ class ClickEngine:
             self.release_held()
 
     def release_held(self) -> None:
-        held = self._held
-        if held is not None:
-            try:
-                self._backend.release(held)
-            finally:
-                self._held = None
+        with self._held_lock:
+            held = self._held
+            if held is not None:
+                try:
+                    self._backend.release(held)
+                finally:
+                    self._held = None
+
+    def _press_button(self, button: str) -> None:
+        with self._held_lock:
+            self._held = button
+            self._backend.press(button)
 
     # ── Worker ───────────────────────────────────────────────────────
 
@@ -190,6 +197,17 @@ class ClickEngine:
         # Never hold longer than 60% of the interval, or the cadence breaks.
         hold_cap = period * 0.6
         clicks_per_action = 2 if s.double else 1
+        # Minimal gap between halves of a non-humanized double-click so OS/apps
+        # never coalesce or drop the second click.
+        double_gap = min(0.008, period * 0.25)
+        # Allow the top-left (0, 0) failsafe in Fixed XY mode too, unless the
+        # user intentionally targeted the top-left corner itself.
+        corner_margin = CORNER_FAILSAFE_PX + (s.position_jitter_px if s.humanize else 0)
+        check_corner = s.corner_failsafe and (
+            s.fixed_position is None
+            or s.fixed_position[0] > corner_margin
+            or s.fixed_position[1] > corner_margin
+        )
         remaining = s.repeat_count
         reason = "stopped"
 
@@ -197,7 +215,7 @@ class ClickEngine:
             with HighResolutionTimer():
                 next_deadline = perf()
                 while not stop.is_set():
-                    if s.corner_failsafe and s.fixed_position is None and self._in_corner():
+                    if check_corner and self._in_corner():
                         reason = "failsafe"
                         break
 
@@ -208,23 +226,23 @@ class ClickEngine:
                         backend.move(x, y)
 
                     for i in range(clicks_per_action):
+                        if stop.is_set():
+                            break
                         if use_hold:
                             hold = min(
                                 rng.triangular(s.hold_min_ms, s.hold_max_ms) / 1000.0,
                                 hold_cap / clicks_per_action,
                             )
-                            self._held = s.button
-                            backend.press(s.button)
+                            self._press_button(s.button)
                             wait_for(hold, stop)  # release happens even if stopped
-                            backend.release(s.button)
-                            self._held = None
+                            self.release_held()
                         else:
                             backend.click(s.button)
                         self._click_count += 1
                         self._timestamps.append(perf())
-                        if i + 1 < clicks_per_action and use_hold:
-                            # Natural gap between the two halves of a double click.
-                            if not wait_for(min(hold, hold_cap / 2), stop):
+                        if i + 1 < clicks_per_action:
+                            gap = min(hold, hold_cap / 2) if use_hold else double_gap
+                            if not wait_for(gap, stop):
                                 break
 
                     if remaining:

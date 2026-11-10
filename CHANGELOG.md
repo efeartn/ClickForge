@@ -2,6 +2,22 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [2.4.0] - 2026-11-10
+
+### Changed
+- **License Migrated to GPL-3.0:** Relicensed ClickForge from MIT to the **GNU General Public License v3.0 (`GPL-3.0`)** to keep derivatives open-source.
+- **Instant Hotkey Trigger While Editing:** Pressing a non-conflicting hotkey (such as `F6` or `Mouse4`/`Mouse5`) while a numeric field is focused now commits the edited value and starts clicking immediately instead of ignoring the trigger.
+- **Numpad Virtual-Key Labels:** Numpad bindings (`vk96`–`vk111`) now render with clean labels (`Num 0`–`Num 9`, `Num +`, `Num -`, `Num *`, `Num /`, `Num .`).
+- **Click-to-Cancel Hotkey Recording:** Clicking the hotkey button a second time while recording cancels the recording cleanly.
+
+### Fixed
+- **Corner Failsafe in Fixed XY Mode:** Moving the pointer to `(0, 0)` between clicks now halts Fixed XY runs as well (unless `(0, 0)` itself is the configured target).
+- **Double-Click Cadence (`2x`):** Added a minimum inter-click gap for non-humanized double-clicks so target apps never drop or coalesce the second click.
+- **Thread-Safe Button Release & Listener Shutdown:** Synchronized held-button release with an explicit lock so `stop(wait=True)` and worker exit never emit duplicate `mouseUp` events, and hardened `TriggerListener.stop()` / `reset_trigger_state()` against race conditions.
+- **Config Profile Clamping & Temp Cleanup:** `_validate_profile` now clamps out-of-range values in hand-edited `config.json` files, and `Config.save()` removes orphaned `.tmp` files if `os.replace` fails.
+
+---
+
 ## [2.3.0] - 2026-11-07
 
 ### Added

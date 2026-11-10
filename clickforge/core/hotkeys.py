@@ -26,7 +26,30 @@ _MOUSE_NAMES = {
     "button8": "mouse:x1",  # X11 naming
     "button9": "mouse:x2",
 }
-_DISPLAY = {"mouse:x1": "Mouse4", "mouse:x2": "Mouse5"}
+_DISPLAY = {
+    "mouse:x1": "Mouse4",
+    "mouse:x2": "Mouse5",
+    "vk96": "Num 0",
+    "vk97": "Num 1",
+    "vk98": "Num 2",
+    "vk99": "Num 3",
+    "vk100": "Num 4",
+    "vk101": "Num 5",
+    "vk102": "Num 6",
+    "vk103": "Num 7",
+    "vk104": "Num 8",
+    "vk105": "Num 9",
+    "vk106": "Num *",
+    "vk107": "Num +",
+    "vk109": "Num -",
+    "vk110": "Num .",
+    "vk111": "Num /",
+}
+_NUMERIC_CONFLICT_KEYS = frozenset(
+    set("0123456789.-")
+    | {f"vk{code}" for code in range(96, 112)}
+    | {"backspace", "delete", "left", "right", "home", "end"}
+)
 
 
 def display_name(binding: str) -> str:
@@ -42,6 +65,11 @@ def display_name(binding: str) -> str:
 
 def is_mouse_binding(binding: str) -> bool:
     return binding.startswith("mouse:")
+
+
+def conflicts_with_numeric_entry(binding: str) -> bool:
+    """Return True if ``binding`` is a key used while editing numeric fields."""
+    return binding.lower() in _NUMERIC_CONFLICT_KEYS
 
 
 class TriggerListener:
@@ -82,12 +110,23 @@ class TriggerListener:
         self._sync_mouse_listener()
 
     def stop(self) -> None:
-        if self._kb is not None:
-            self._kb.stop()
+        with self._lock:
+            self._recording = False
+            self._down = False
+            kb = self._kb
             self._kb = None
-        if self._mouse is not None:
-            self._mouse.stop()
+        if kb is not None:
+            kb.stop()
+        with self._mouse_lock:
+            ms = self._mouse
             self._mouse = None
+        if ms is not None:
+            ms.stop()
+
+    def reset_trigger_state(self) -> None:
+        """Clear any latched key-down state (e.g. after panic or failsafe)."""
+        with self._lock:
+            self._down = False
 
     # ── State ────────────────────────────────────────────────────────
 
@@ -177,6 +216,7 @@ class TriggerListener:
             self._finish_recording(None if name == PANIC_KEY else name)
             return
         if name == PANIC_KEY:
+            self._down = False
             self._on_panic()
             return
         if name == self._binding:

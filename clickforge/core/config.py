@@ -106,7 +106,21 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
 
 def _validate_profile(data: Any) -> Dict[str, Any]:
     src = data if isinstance(data, dict) else {}
-    return {k: _coerce(k, src.get(k, d), d) for k, d in PROFILE_DEFAULTS.items()}
+    out = {k: _coerce(k, src.get(k, d), d) for k, d in PROFILE_DEFAULTS.items()}
+    if out["speed_value"] <= 0:
+        out["speed_value"] = PROFILE_DEFAULTS["speed_value"]
+    out["repeat_count"] = max(1, min(int(out["repeat_count"]), 10_000_000))
+    out["fixed_x"] = max(-32768, min(int(out["fixed_x"]), 32767))
+    out["fixed_y"] = max(-32768, min(int(out["fixed_y"]), 32767))
+    out["jitter_pct"] = max(0.0, min(float(out["jitter_pct"]), 50.0))
+    h_min = max(0.0, min(float(out["hold_min_ms"]), 500.0))
+    h_max = max(0.0, min(float(out["hold_max_ms"]), 500.0))
+    if h_min > h_max:
+        h_min, h_max = h_max, h_min
+    out["hold_min_ms"] = h_min
+    out["hold_max_ms"] = h_max
+    out["pos_jitter_px"] = max(0, min(int(out["pos_jitter_px"]), 50))
+    return out
 
 
 def normalize_profile(data: Any) -> Dict[str, Any]:
@@ -168,14 +182,20 @@ class Config:
 
     def save(self) -> None:
         directory = os.path.dirname(self.path)
+        tmp: str | None = None
         try:
             os.makedirs(directory, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=directory, prefix=".config-", suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, indent=2)
             os.replace(tmp, self.path)  # atomic: never leaves a half-written file
+            tmp = None
         except OSError:
-            pass
+            if tmp is not None:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
 
     @staticmethod
     def _migrate(old: Dict[str, Any]) -> Dict[str, Any]:

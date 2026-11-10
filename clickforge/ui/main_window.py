@@ -24,7 +24,11 @@ from clickforge import __app_name__, __version__
 from clickforge.core import updater
 from clickforge.core.clicker import ClickEngine, ClickSettings
 from clickforge.core.config import PROFILE_NAMES, Config, normalize_profile
-from clickforge.core.hotkeys import TriggerListener, display_name
+from clickforge.core.hotkeys import (
+    TriggerListener,
+    conflicts_with_numeric_entry,
+    display_name,
+)
 from clickforge.core.system import prepare_process, resource_path, startup_warnings
 from clickforge.core.validation import (
     allow_float,
@@ -141,7 +145,7 @@ class ClickForgeWindow(ctk.CTk):
         self._build_ui()
         self._load_from_config()
         self._apply_always_on_top()
-        self._fit_to_content()
+        self._fit_to_content(center=True)
 
         # Clicking neutral background defocuses active entry fields
         self.bind_all("<Button-1>", self._on_global_click, add="+")
@@ -154,19 +158,25 @@ class ClickForgeWindow(ctk.CTk):
 
     # ── Layout ───────────────────────────────────────────────────────
 
-    def _fit_to_content(self) -> None:
+    def _fit_to_content(self, center: bool = False) -> None:
         """Size the window to exactly fit its content.
 
         v2.2 used a hard-coded 460x690 geometry, which clipped the footer on
         scaled displays.  Measuring the requested size avoids that entirely.
         """
         self.update_idletasks()
-        width = max(
-            MIN_WIDTH,
-            int(math.ceil(self._reverse_window_scaling(self.winfo_reqwidth()))),
-        )
-        height = int(math.ceil(self._reverse_window_scaling(self.winfo_reqheight()))) + 1
-        self.geometry(f"{width}x{height}")
+        req_w = self.winfo_reqwidth()
+        req_h = self.winfo_reqheight()
+        width = max(MIN_WIDTH, int(math.ceil(self._reverse_window_scaling(req_w))))
+        height = int(math.ceil(self._reverse_window_scaling(req_h))) + 1
+        if center:
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            x = max(24, (sw - req_w) // 2)
+            y = max(24, (sh - req_h) // 2 - 24)
+            self.geometry(f"{width}x{height}+{x}+{y}")
+        else:
+            self.geometry(f"{width}x{height}")
 
     # ── Listener-thread callbacks ────────────────────────────────────
 
@@ -623,7 +633,10 @@ class ClickForgeWindow(ctk.CTk):
         self._sync_hotkey_suspension()
 
     def _sync_hotkey_suspension(self) -> None:
-        suspend = self._focused_entries > 0 or self._picking_coords or self._recording_hotkey
+        entry_conflict = self._focused_entries > 0 and conflicts_with_numeric_entry(
+            self._hotkeys.binding
+        )
+        suspend = entry_conflict or self._picking_coords or self._recording_hotkey
         self._hotkeys.set_suspended(suspend)
 
     def _on_global_click(self, event: tk.Event) -> None:
@@ -945,7 +958,11 @@ class ClickForgeWindow(ctk.CTk):
             self._mark_custom_and_save()
 
     def _start_hotkey_recording(self) -> None:
-        if self._recording_hotkey or self._engine.is_active:
+        if self._engine.is_active:
+            return
+        if self._recording_hotkey:
+            self._hotkeys.cancel_recording()
+            self._finish_hotkey_recording(None)
             return
         self._recording_hotkey = True
         self._sync_hotkey_suspension()
@@ -958,11 +975,11 @@ class ClickForgeWindow(ctk.CTk):
 
     def _finish_hotkey_recording(self, binding: Optional[str]) -> None:
         self._recording_hotkey = False
-        self._sync_hotkey_suspension()
         if binding:
             self._hotkeys.set_binding(binding)
             self._config.set("hotkey", binding)
             self._config.save()
+        self._sync_hotkey_suspension()
         self.hotkey_btn.configure(border_color=t.BORDER_STRONG, text_color=t.TEXT)
         self._refresh_interactive_states()
 
@@ -1002,6 +1019,8 @@ class ClickForgeWindow(ctk.CTk):
             or self._picking_coords
         ):
             return
+        if self._focused_entries > 0:
+            self.focus_set()
         snapshot = self._build_settings_snapshot()
         self._save_current_settings()
         if self._engine.start(snapshot):
@@ -1054,6 +1073,8 @@ class ClickForgeWindow(ctk.CTk):
                 self.toggle_clicking()
         elif kind in ("trigger_release", "panic", "stopped"):
             # The stop itself already happened on the listener/worker thread.
+            if kind == "stopped":
+                self._hotkeys.reset_trigger_state()
             self._refresh_interactive_states()
         elif kind == "recorded":
             self._finish_hotkey_recording(payload)
