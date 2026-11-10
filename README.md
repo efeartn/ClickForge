@@ -5,6 +5,8 @@
 
   **High-precision desktop auto-clicker with native Win32 input injection, hybrid sub-millisecond timing, and Gaussian humanization.**
 
+  [![Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=7C3AED&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
+  [![Build Status](https://github.com/efeartn/ClickForge/actions/workflows/build.yml/badge.svg)](https://github.com/efeartn/ClickForge/actions/workflows/build.yml)
   [![License: MIT](https://img.shields.io/badge/License-MIT-7C3AED.svg)](LICENSE)
   [![Platform: Windows | macOS | Linux](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-25252B.svg)](#installation)
   [![Python: 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776AB.svg)](https://www.python.org/downloads/)
