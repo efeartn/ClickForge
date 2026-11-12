@@ -61,10 +61,27 @@ All notable changes to **ClickForge** are documented in this file.
 
 ---
 
-## [2.0.0] - 2026-08-19 — "Genesis"
+## [2.1.0] - 2026-09-20 — "Refine"
+
+### Fixed
+- Fixed coordinate input validation for negative screen positions.
+- Fixed double-click metric tracking cadence and counter consistency.
+- Fixed macOS bundle icon compatibility and added write permissions to release pipelines.
+
+---
+
+## [2.0.0] - 2026-08-20 — "Genesis"
 
 ### Added
-- Complete rewrite from legacy Tkinter to modern CustomTkinter.
-- Dark and light theme auto-detection with custom palette.
+- Complete rewrite from legacy Tkinter to modern CustomTkinter with Bento Grid layout.
+- Added Gaussian Humanize Mode, multi-platform CI build pipeline, and custom theme auto-detection.
 - Hotkey configuration and multi-button click support (Left, Right, Middle).
 - Interval speed units (ms, sec, min, CPS) and repeat counters.
+
+---
+
+## [1.0.0] - 2026-08-19 — "Origin"
+
+### Added
+- Initial public release of ClickForge desktop auto-clicker.
+- Core threading architecture, background click loop, and global hotkey listener.
