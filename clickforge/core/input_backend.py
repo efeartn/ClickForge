@@ -136,21 +136,30 @@ class PynputBackend(InputBackend):
     """Portable fallback for macOS and Linux (X11)."""
 
     def __init__(self) -> None:
-        from pynput.mouse import Button, Controller
+        try:
+            from pynput.mouse import Button, Controller
 
-        self._mouse = Controller()
-        self._buttons = {"left": Button.left, "right": Button.right, "middle": Button.middle}
+            self._mouse = Controller()
+            self._buttons = {"left": Button.left, "right": Button.right, "middle": Button.middle}
+        except Exception:
+            self._mouse = None
+            self._buttons = {}
 
     def press(self, button: str) -> None:
-        self._mouse.press(self._buttons[button])
+        if self._mouse and button in self._buttons:
+            self._mouse.press(self._buttons[button])
 
     def release(self, button: str) -> None:
-        self._mouse.release(self._buttons[button])
+        if self._mouse and button in self._buttons:
+            self._mouse.release(self._buttons[button])
 
     def move(self, x: int, y: int) -> None:
-        self._mouse.position = (int(x), int(y))
+        if self._mouse:
+            self._mouse.position = (int(x), int(y))
 
     def position(self) -> Optional[Tuple[int, int]]:
+        if not self._mouse:
+            return None
         try:
             x, y = self._mouse.position
             return int(x), int(y)

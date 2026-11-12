@@ -16,7 +16,10 @@ import re
 import threading
 from typing import Any, Callable, Optional
 
-from pynput import keyboard, mouse
+try:
+    from pynput import keyboard, mouse
+except Exception:
+    keyboard, mouse = None, None
 
 PANIC_KEY = "esc"
 
@@ -103,6 +106,8 @@ class TriggerListener:
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def start(self) -> None:
+        if keyboard is None:
+            return
         if self._kb is None:
             self._kb = keyboard.Listener(on_press=self._key_press, on_release=self._key_release)
             self._kb.daemon = True
@@ -164,7 +169,7 @@ class TriggerListener:
     def _sync_mouse_listener(self) -> None:
         with self._mouse_lock:
             need = self._kb is not None and (self._recording or is_mouse_binding(self._binding))
-            if need and self._mouse is None:
+            if need and self._mouse is None and mouse is not None:
                 self._mouse = mouse.Listener(on_click=self._mouse_click)
                 self._mouse.daemon = True
                 self._mouse.start()
@@ -178,9 +183,9 @@ class TriggerListener:
                 key = self._kb.canonical(key)
             except Exception:
                 pass
-        if isinstance(key, keyboard.Key):
+        if keyboard is not None and isinstance(key, keyboard.Key):
             return key.name
-        if isinstance(key, keyboard.KeyCode):
+        if keyboard is not None and isinstance(key, keyboard.KeyCode):
             if key.char and len(key.char) == 1 and key.char.isprintable():
                 return key.char.lower()
             if key.vk is not None:

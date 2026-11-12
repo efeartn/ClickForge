@@ -43,10 +43,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libx11-dev
+          sudo apt-get install -y python3-tk libx11-dev xvfb
 
       - name: Run unit tests
-        run: python -m unittest discover tests
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a python -m unittest discover tests
+          else
+            python -m unittest discover tests
+          fi
+        shell: bash
 
       - name: Build executable with PyInstaller
         run: pyinstaller clickforge.spec --clean -y
