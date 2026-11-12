@@ -68,8 +68,11 @@ venv.bak/
 .DS_Store
 Thumbs.db
 
-# Local user config
+# Local user config & private developer notes
 config.json
+HANDOFF.md
+*.private.*
+*.local.*
 
 # Tracked brand assets
 !assets/
