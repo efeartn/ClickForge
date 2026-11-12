@@ -80,6 +80,8 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
+        self.assertEqual(clickforge.__version__, "3.0.0")
+        self.assertEqual(clickforge.__codename__, "Obsidian")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
 

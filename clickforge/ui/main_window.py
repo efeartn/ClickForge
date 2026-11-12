@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
-from clickforge import __app_name__, __version__
+from clickforge import __app_name__, __codename__, __version__
 from clickforge.core import updater
 from clickforge.core.clicker import ClickEngine, ClickSettings
 from clickforge.core.config import PROFILE_NAMES, Config, normalize_profile
@@ -258,7 +258,7 @@ class ClickForgeWindow(ctk.CTk):
         ).pack(side="left")
         ctk.CTkLabel(
             brand,
-            text=f"v{__version__}",
+            text=f"v{__version__} · {__codename__}",
             font=typo.mono_small,
             text_color=t.TEXT_FAINT,
         ).pack(side="left", padx=(6, 0), pady=(2, 0))

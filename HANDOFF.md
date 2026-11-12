@@ -1,8 +1,8 @@
-# ClickForge — Technical Handoff (`v2.5.0`)
+# ClickForge — Technical Handoff (`v3.0.0` · "Obsidian")
 
 ## 1. Project Snapshot
 - **Project:** **ClickForge** — High-precision, cross-platform desktop auto-clicker (`Python 3.9+`, `CustomTkinter`, native Win32 `SendInput`, `pynput`).
-- **Current Version:** `2.5.0`.
+- **Current Version:** `3.0.0` (Codename: `"Obsidian"`).
 - **License:** `GPL-3.0-or-later`.
 - **Repository:** `https://github.com/efeartn/ClickForge.git` (default branch: `main`).
 - **GitHub Topics:** `auto-clicker`, `autoclicker`, `customtkinter`, `desktop-automation`, `gui`, `linux`, `macos`, `mouse-clicker`, `open-source`, `pynput`, `python`, `sendinput`, `utility`, `win32api`, `windows`.

@@ -2,10 +2,11 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
-## [2.5.0] - 2026-11-12
+## [3.0.0] - 2026-11-12 — "Obsidian"
 
 ### Added
 - **Dual UI Modes (Simple vs. Pro):** Integrated an Apple-style segmented mode switcher. **Simple Mode** presents a minimal, frictionless interface for casual users with quick CPS pills (`5 CPS`, `10 CPS`, `20 CPS`, `Custom`), Left/Right button choice, clean repeat controls, and dynamic content-fit window resizing. **Pro Mode** expands full controls for power users (Gaussian jitter, hold duty cycle, coordinate picker, multi-unit intervals, and preset profiles).
+- **In-App Release Codename Display:** Promoted the major milestone to **v3.0.0 ("Obsidian")** and embedded the release name directly in the application header (`v3.0.0 · Obsidian`).
 - **Apple-Inspired Minimalist Brand Mark & Design Language:** Crafted a new minimalist geometric logo featuring a deep obsidian-to-graphite squircle, ambient violet glow, concentric precision touch rings, and a sculpted chevron pointer. Upgraded UI surfaces with Apple-style neutral tokens, refined specular borders, and softer corner radii (`RADIUS = 10`).
 - **Auditory Feedback Cues:** Added subtle, non-blocking auditory chimes when clicking starts (1320 Hz) and stops (880 Hz) so users get instant feedback in fullscreen apps, toggleable via a new header icon button (`Sound` / `Mute`).
 - **Profile Preset Export & Import:** Added JSON profile export and import capabilities in `Config` to back up, share, and migrate auto-clicking profiles.
@@ -17,7 +18,7 @@ All notable changes to **ClickForge** are documented in this file.
 
 ---
 
-## [2.4.0] - 2026-11-10
+## [2.4.0] - 2026-11-10 — "Sentinel"
 
 ### Changed
 - **License Migrated to GPL-3.0:** Relicensed ClickForge from MIT to the **GNU General Public License v3.0 (`GPL-3.0`)** to keep derivatives open-source.
@@ -33,7 +34,7 @@ All notable changes to **ClickForge** are documented in this file.
 
 ---
 
-## [2.3.0] - 2026-11-07
+## [2.3.0] - 2026-11-07 — "Vanguard"
 
 ### Added
 - **Verified In-App Auto-Updater (`clickforge/core/updater.py`):** Background and manual GitHub Releases update checker with HTTPS enforcement, size & `SHA-256` digest verification, ZipSlip extraction guards, and a detached Windows self-installer with automatic `.cfbak` rollback.
@@ -49,7 +50,7 @@ All notable changes to **ClickForge** are documented in this file.
 
 ---
 
-## [2.2.0] - 2026-08-20
+## [2.2.0] - 2026-08-20 — "Precision"
 
 ### Added
 - **Native Win32 `SendInput` Backend:** Pre-allocated `ctypes` input structures on Windows with portable `pynput` fallback on macOS and Linux.
@@ -57,3 +58,13 @@ All notable changes to **ClickForge** are documented in this file.
 - **Gaussian Humanizer:** Clamped Gaussian interval jitter (`± % σ`), triangular hold duration (`min–max ms`), and fixed-position pixel spread (`± px`).
 - **Fluent / Linear UI Overhaul:** High-contrast dark/light theme tokens, segmented controls, live rolling 1-second CPS telemetry, and fullscreen crosshair coordinate picker.
 - **Mouse Side Button Triggers:** Support for `Mouse4` (`XButton1`) and `Mouse5` (`XButton2`) in both `Toggle` and `Hold` modes.
+
+---
+
+## [2.0.0] - 2026-08-19 — "Genesis"
+
+### Added
+- Complete rewrite from legacy Tkinter to modern CustomTkinter.
+- Dark and light theme auto-detection with custom palette.
+- Hotkey configuration and multi-button click support (Left, Right, Middle).
+- Interval speed units (ms, sec, min, CPS) and repeat counters.
