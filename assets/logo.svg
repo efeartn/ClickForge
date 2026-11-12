@@ -1,23 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
-  <!-- Dark Squircle Container -->
-  <rect x="24" y="24" width="464" height="464" rx="112" fill="#111118" stroke="#272736" stroke-width="6"/>
+  <defs>
+    <linearGradient id="bgGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1C1C26"/>
+      <stop offset="100%" stop-color="#0B0B10"/>
+    </linearGradient>
+    <linearGradient id="borderGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3A3A50"/>
+      <stop offset="100%" stop-color="#1D1D28"/>
+    </linearGradient>
+    <radialGradient id="ambientGlow" cx="186" cy="180" r="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7C3AED" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#7C3AED" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ringGrad" x1="120" y1="114" x2="252" y2="246" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <filter id="ptrShadow" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
 
-  <!-- Precision Pulse Ring & Click Sparks at Impact Point -->
-  <circle cx="172" cy="164" r="78" stroke="#7C3AED" stroke-width="16" stroke-opacity="0.32"/>
-  <path d="M 103 200 A 78 78 0 1 1 218 101" stroke="#7C3AED" stroke-width="18" stroke-linecap="round"/>
-  <line x1="92" y1="84" x2="118" y2="110" stroke="#A78BFA" stroke-width="14" stroke-linecap="round"/>
-  <line x1="172" y1="60" x2="172" y2="92" stroke="#7C3AED" stroke-width="14" stroke-linecap="round"/>
-  <line x1="68" y1="164" x2="100" y2="164" stroke="#7C3AED" stroke-width="14" stroke-linecap="round"/>
+  <!-- Apple-Style Squircle Surface -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="5"/>
 
-  <!-- Subtle Elevation Shadow -->
-  <polygon points="178,174 216,422 280,342 416,254" fill="#06060A" fill-opacity="0.45"/>
+  <!-- Soft Ambient Radial Glow -->
+  <circle cx="186" cy="180" r="150" fill="url(#ambientGlow)"/>
 
-  <!-- Two-Tone Geometric Faceted Cursor Arrow -->
-  <!-- Upper-Right Facet (#A78BFA) -->
-  <polygon points="172,164 410,244 274,332" fill="#A78BFA"/>
-  <!-- Lower-Left Primary Facet (#FFFFFF) -->
-  <polygon points="172,164 274,332 210,412" fill="#FFFFFF"/>
+  <!-- Concentric Precision Touch Rings -->
+  <circle cx="186" cy="180" r="102" stroke="#7C3AED" stroke-width="9" stroke-opacity="0.36"/>
+  <circle cx="186" cy="180" r="58" stroke="url(#ringGrad)" stroke-width="14"/>
 
-  <!-- Impact Core Dot -->
-  <circle cx="172" cy="164" r="10" fill="#FFFFFF"/>
+  <!-- Minimalist Sculpted Chevron Pointer -->
+  <path d="M 186 180 L 228 414 L 282 304 L 406 246 Z"
+        fill="#FFFFFF"
+        stroke="#FFFFFF"
+        stroke-width="16"
+        stroke-linejoin="round"
+        filter="url(#ptrShadow)"/>
 </svg>

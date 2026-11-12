@@ -1,9 +1,10 @@
 """Deterministic generator for ClickForge brand and icon assets.
 
-Creates an original minimalist geometric logo:
-- Dark squircle background (#111118) with a subtle 1px border (#262636)
-- Precision pulse ring (#7C3AED) + radial spark ticks at the click origin
-- Two-tone faceted geometric cursor arrow (#FFFFFF left facet, #A78BFA right facet)
+Apple-inspired minimalist design language:
+- Deep obsidian-to-graphite vertical gradient squircle (#1C1C26 -> #0B0B10)
+  with a subtle top-lit specular border (#343448 -> #1E1E2A)
+- Soft radial ambient violet glow + concentric precision touch rings (#7C3AED / #A78BFA)
+- Iconic sculpted chevron pointer (#FFFFFF) with a deep inner notch and soft elevation shadow
 
 Outputs:
 - assets/logo.svg   (scalable vector for README and docs)
@@ -14,37 +15,47 @@ Outputs:
 
 from __future__ import annotations
 
-import math
 import os
 from typing import List, Tuple
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(ROOT_DIR, "assets")
 
-BG_HEX = "#111118"
-BORDER_HEX = "#272736"
-RING_HEX = "#7C3AED"
-FACET_LIGHT_HEX = "#FFFFFF"
-FACET_ACCENT_HEX = "#A78BFA"
+BG_TOP_RGB = (28, 28, 38)        # #1C1C26
+BG_BOT_RGB = (11, 11, 16)        # #0B0B10
+BORDER_RGBA = (52, 52, 72, 255)  # #343448
 
-BG_RGBA = (17, 17, 24, 255)
-BORDER_RGBA = (39, 39, 54, 255)
-RING_RGBA = (124, 58, 237, 255)
-RING_GLOW_RGBA = (124, 58, 237, 72)
-FACET_LIGHT_RGBA = (255, 255, 255, 255)
-FACET_ACCENT_RGBA = (167, 139, 250, 255)
-SHADOW_RGBA = (6, 6, 10, 140)
+ACCENT_HEX = "#7C3AED"
+ACCENT_LIGHT_HEX = "#A78BFA"
+WHITE_HEX = "#FFFFFF"
+
+AMBIENT_GLOW_RGBA = (124, 58, 237, 52)
+OUTER_RING_RGBA = (124, 58, 237, 92)
+INNER_RING_RGBA = (139, 92, 246, 245)
+POINTER_RGBA = (255, 255, 255, 255)
+SHADOW_RGBA = (0, 0, 0, 175)
 
 ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
 
 # Normalized coordinates on a 512x512 canvas:
-# Cursor tip sits at (172, 164), pointing up-left into the pulse origin.
-TIP = (172.0, 164.0)
-LEFT_WING = (210.0, 412.0)
-CENTER_NOTCH = (274.0, 332.0)
-RIGHT_WING = (410.0, 244.0)
+# Concentric ring origin sits at (186, 180); sculpted chevron pointer meets the origin.
+ORIGIN = (186.0, 180.0)
+POINTER_PTS: List[Tuple[float, float]] = [
+    (186.0, 180.0),  # Tip at click origin
+    (228.0, 414.0),  # Bottom-left wing
+    (282.0, 304.0),  # Deep sculpted inner notch
+    (406.0, 246.0),  # Top-right wing
+]
+
+# Slightly bolder geometry for 16px / 24px titlebar / tray icons
+POINTER_PTS_SMALL: List[Tuple[float, float]] = [
+    (170.0, 164.0),
+    (216.0, 428.0),
+    (278.0, 308.0),
+    (418.0, 240.0),
+]
 
 
 def _scale_pt(pt: Tuple[float, float], scale: float) -> Tuple[float, float]:
@@ -52,115 +63,178 @@ def _scale_pt(pt: Tuple[float, float], scale: float) -> Tuple[float, float]:
 
 
 def generate_svg(path: str) -> None:
-    """Write a crisp, standalone SVG version of the ClickForge mark."""
+    """Write a crisp, Apple-style minimalist SVG of the ClickForge icon."""
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
-  <!-- Dark Squircle Container -->
-  <rect x="24" y="24" width="464" height="464" rx="112" fill="{BG_HEX}" stroke="{BORDER_HEX}" stroke-width="6"/>
+  <defs>
+    <linearGradient id="bgGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1C1C26"/>
+      <stop offset="100%" stop-color="#0B0B10"/>
+    </linearGradient>
+    <linearGradient id="borderGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#3A3A50"/>
+      <stop offset="100%" stop-color="#1D1D28"/>
+    </linearGradient>
+    <radialGradient id="ambientGlow" cx="186" cy="180" r="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="{ACCENT_HEX}" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="{ACCENT_HEX}" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ringGrad" x1="120" y1="114" x2="252" y2="246" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="{ACCENT_LIGHT_HEX}"/>
+      <stop offset="100%" stop-color="{ACCENT_HEX}"/>
+    </linearGradient>
+    <filter id="ptrShadow" x="-20%" y="-20%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
 
-  <!-- Precision Pulse Ring & Click Sparks at Impact Point -->
-  <circle cx="172" cy="164" r="78" stroke="{RING_HEX}" stroke-width="16" stroke-opacity="0.32"/>
-  <path d="M 103 200 A 78 78 0 1 1 218 101" stroke="{RING_HEX}" stroke-width="18" stroke-linecap="round"/>
-  <line x1="92" y1="84" x2="118" y2="110" stroke="{FACET_ACCENT_HEX}" stroke-width="14" stroke-linecap="round"/>
-  <line x1="172" y1="60" x2="172" y2="92" stroke="{RING_HEX}" stroke-width="14" stroke-linecap="round"/>
-  <line x1="68" y1="164" x2="100" y2="164" stroke="{RING_HEX}" stroke-width="14" stroke-linecap="round"/>
+  <!-- Apple-Style Squircle Surface -->
+  <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bgGrad)" stroke="url(#borderGrad)" stroke-width="5"/>
 
-  <!-- Subtle Elevation Shadow -->
-  <polygon points="178,174 216,422 280,342 416,254" fill="#06060A" fill-opacity="0.45"/>
+  <!-- Soft Ambient Radial Glow -->
+  <circle cx="186" cy="180" r="150" fill="url(#ambientGlow)"/>
 
-  <!-- Two-Tone Geometric Faceted Cursor Arrow -->
-  <!-- Upper-Right Facet (#A78BFA) -->
-  <polygon points="172,164 410,244 274,332" fill="{FACET_ACCENT_HEX}"/>
-  <!-- Lower-Left Primary Facet (#FFFFFF) -->
-  <polygon points="172,164 274,332 210,412" fill="{FACET_LIGHT_HEX}"/>
+  <!-- Concentric Precision Touch Rings -->
+  <circle cx="186" cy="180" r="102" stroke="{ACCENT_HEX}" stroke-width="9" stroke-opacity="0.36"/>
+  <circle cx="186" cy="180" r="58" stroke="url(#ringGrad)" stroke-width="14"/>
 
-  <!-- Impact Core Dot -->
-  <circle cx="172" cy="164" r="10" fill="{FACET_LIGHT_HEX}"/>
+  <!-- Minimalist Sculpted Chevron Pointer -->
+  <path d="M 186 180 L 228 414 L 282 304 L 406 246 Z"
+        fill="{WHITE_HEX}"
+        stroke="{WHITE_HEX}"
+        stroke-width="16"
+        stroke-linejoin="round"
+        filter="url(#ptrShadow)"/>
 </svg>
 """
     with open(path, "w", encoding="utf-8") as f:
         f.write(svg)
 
 
-def render_icon(size: int) -> Image.Image:
-    """Render the geometric icon at ``size`` using 4x supersampling.
+def _draw_rounded_polygon(
+    draw: ImageDraw.ImageDraw,
+    pts: List[Tuple[float, float]],
+    radius: float,
+    fill: Tuple[int, int, int, int],
+) -> None:
+    """Draw a polygon with smoothly rounded vertices for an Apple-like finish."""
+    draw.polygon(pts, fill=fill)
+    if radius >= 1.0:
+        w = max(1, int(round(radius * 2)))
+        n = len(pts)
+        for i in range(n):
+            p0 = pts[i]
+            p1 = pts[(i + 1) % n]
+            draw.line([p0, p1], fill=fill, width=w)
+        for x, y in pts:
+            draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=fill)
 
-    At very small sizes (16x16, 24x24), fine details are simplified and stroke
-    weights are boosted so the silhouette stays unmistakable in the titlebar.
+
+def render_icon(size: int) -> Image.Image:
+    """Render the minimalist icon at ``size`` using 4x supersampling.
+
+    All translucent elements are composited via ``Image.alpha_composite`` so
+    the squircle canvas always maintains full opacity inside its mask.
     """
     ss = 4 if size < 256 else 2
     canvas_px = size * ss
     scale = canvas_px / 512.0
     small = size <= 24
 
-    img = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
-    # 1. Squircle background
-    pad = int(round((16 if small else 24) * scale))
+    # 1. Vertical gradient squircle background
+    pad = int(round((14 if small else 24) * scale))
     radius = int(round((116 if small else 112) * scale))
-    border_w = max(1, int(round((10 if small else 6) * scale)))
-    draw.rounded_rectangle(
+    border_w = max(1, int(round((8 if small else 5) * scale)))
+
+    grad = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    grad_draw = ImageDraw.Draw(grad)
+    y0, y1 = pad, canvas_px - pad - 1
+    span = max(1, y1 - y0)
+    for y in range(y0, y1 + 1):
+        t = (y - y0) / span
+        r = int(round(BG_TOP_RGB[0] + (BG_BOT_RGB[0] - BG_TOP_RGB[0]) * t))
+        g = int(round(BG_TOP_RGB[1] + (BG_BOT_RGB[1] - BG_TOP_RGB[1]) * t))
+        b = int(round(BG_TOP_RGB[2] + (BG_BOT_RGB[2] - BG_TOP_RGB[2]) * t))
+        grad_draw.line([(pad, y), (canvas_px - pad - 1, y)], fill=(r, g, b, 255))
+
+    mask = Image.new("L", (canvas_px, canvas_px), 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.rounded_rectangle(
         [pad, pad, canvas_px - pad - 1, canvas_px - pad - 1],
         radius=radius,
-        fill=BG_RGBA,
+        fill=255,
+    )
+
+    img = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    img.paste(grad, (0, 0), mask)
+
+    # 2. Ambient glow + Concentric precision touch rings (alpha-composited)
+    ox, oy = _scale_pt((170.0, 164.0) if small else ORIGIN, scale)
+
+    if not small:
+        glow_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+        glow_draw = ImageDraw.Draw(glow_layer)
+        glow_r = 115.0 * scale
+        glow_draw.ellipse(
+            [ox - glow_r, oy - glow_r, ox + glow_r, oy + glow_r],
+            fill=AMBIENT_GLOW_RGBA,
+        )
+        glow_layer = glow_layer.filter(
+            ImageFilter.GaussianBlur(radius=max(1, int(round(28.0 * scale))))
+        )
+        img = Image.alpha_composite(img, glow_layer)
+
+        outer_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+        outer_draw = ImageDraw.Draw(outer_layer)
+        outer_r = 102.0 * scale
+        outer_w = max(2, int(round(9.0 * scale)))
+        outer_draw.ellipse(
+            [ox - outer_r, oy - outer_r, ox + outer_r, oy + outer_r],
+            outline=OUTER_RING_RGBA,
+            width=outer_w,
+        )
+        img = Image.alpha_composite(img, outer_layer)
+
+    inner_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    inner_draw = ImageDraw.Draw(inner_layer)
+    inner_r = (66.0 if small else 58.0) * scale
+    inner_w = max(2, int(round((22.0 if small else 14.0) * scale)))
+    inner_draw.ellipse(
+        [ox - inner_r, oy - inner_r, ox + inner_r, oy + inner_r],
+        outline=INNER_RING_RGBA,
+        width=inner_w,
+    )
+    img = Image.alpha_composite(img, inner_layer)
+
+    # 3. Sculpted minimalist chevron pointer with soft shadow
+    raw_pts = POINTER_PTS_SMALL if small else POINTER_PTS
+    pts = [_scale_pt(p, scale) for p in raw_pts]
+    join_r = (6.0 if small else 8.0) * scale
+
+    if not small:
+        sh_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+        sh_draw = ImageDraw.Draw(sh_layer)
+        sh_off_y = 10.0 * scale
+        sh_pts = [(x, y + sh_off_y) for x, y in pts]
+        _draw_rounded_polygon(sh_draw, sh_pts, join_r, SHADOW_RGBA)
+        blur_px = max(1, int(round(11.0 * scale)))
+        sh_layer = sh_layer.filter(ImageFilter.GaussianBlur(radius=blur_px))
+        img = Image.alpha_composite(img, sh_layer)
+
+    ptr_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    ptr_draw = ImageDraw.Draw(ptr_layer)
+    _draw_rounded_polygon(ptr_draw, pts, join_r, POINTER_RGBA)
+    img = Image.alpha_composite(img, ptr_layer)
+
+    # 4. Crisp squircle border on top
+    border_layer = Image.new("RGBA", (canvas_px, canvas_px), (0, 0, 0, 0))
+    border_draw = ImageDraw.Draw(border_layer)
+    border_draw.rounded_rectangle(
+        [pad, pad, canvas_px - pad - 1, canvas_px - pad - 1],
+        radius=radius,
         outline=BORDER_RGBA,
         width=border_w,
     )
-
-    # 2. Precision pulse ring around the click point
-    tx, ty = _scale_pt(TIP, scale)
-    ring_r = (86.0 if small else 78.0) * scale
-    ring_w = max(2, int(round((28.0 if small else 18.0) * scale)))
-    bbox = [tx - ring_r, ty - ring_r, tx + ring_r, ty + ring_r]
-
-    if not small:
-        draw.ellipse(bbox, outline=RING_GLOW_RGBA, width=max(2, int(round(16 * scale))))
-
-    # Active pulse arc (top-left 230 degrees around click point)
-    draw.arc(bbox, start=145, end=330, fill=RING_RGBA, width=ring_w)
-
-    # Radial precision spark ticks (omitted at 16x16 to prevent muddiness)
-    if size >= 24:
-        spark_w = max(2, int(round((18 if small else 14) * scale)))
-        for angle_deg, color in ((225, FACET_ACCENT_RGBA), (270, RING_RGBA), (180, RING_RGBA)):
-            rad = math.radians(angle_deg)
-            r_in = ring_r * 1.05
-            r_out = ring_r * 1.34
-            x0 = tx + math.cos(rad) * r_in
-            y0 = ty + math.sin(rad) * r_in
-            x1 = tx + math.cos(rad) * r_out
-            y1 = ty + math.sin(rad) * r_out
-            draw.line([(x0, y0), (x1, y1)], fill=color, width=spark_w)
-
-    # 3. Two-tone faceted cursor arrow
-    if small:
-        # Slightly enlarged cursor at 16/24px for maximum legibility
-        tip = _scale_pt((158.0, 150.0), scale)
-        left_wing = _scale_pt((204.0, 428.0), scale)
-        notch = _scale_pt((278.0, 340.0), scale)
-        right_wing = _scale_pt((426.0, 240.0), scale)
-    else:
-        tip = _scale_pt(TIP, scale)
-        left_wing = _scale_pt(LEFT_WING, scale)
-        notch = _scale_pt(CENTER_NOTCH, scale)
-        right_wing = _scale_pt(RIGHT_WING, scale)
-
-        # Subtle drop shadow
-        sh_off = 8.0 * scale
-        draw.polygon(
-            [
-                (tip[0] + sh_off, tip[1] + sh_off),
-                (left_wing[0] + sh_off, left_wing[1] + sh_off),
-                (notch[0] + sh_off, notch[1] + sh_off),
-                (right_wing[0] + sh_off, right_wing[1] + sh_off),
-            ],
-            fill=SHADOW_RGBA,
-        )
-
-    # Upper-right facet (#A78BFA)
-    draw.polygon([tip, right_wing, notch], fill=FACET_ACCENT_RGBA)
-    # Lower-left facet (#FFFFFF)
-    draw.polygon([tip, notch, left_wing], fill=FACET_LIGHT_RGBA)
+    img = Image.alpha_composite(img, border_layer)
 
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
@@ -178,7 +252,6 @@ def main() -> None:
     icon_512.save(png_path, format="PNG", optimize=True)
 
     frames: List[Image.Image] = [render_icon(s) for s in ICO_SIZES]
-    # Save largest frame as primary with explicit multi-DPI frames appended
     frames[-1].save(
         ico_path,
         format="ICO",
@@ -186,7 +259,6 @@ def main() -> None:
         sizes=[(s, s) for s in ICO_SIZES],
     )
 
-    # macOS app bundle icon (Pillow writes ICNS on every platform).
     icns_path = os.path.join(ASSETS_DIR, "icon.icns")
     render_icon(1024).save(icns_path, format="ICNS")
 

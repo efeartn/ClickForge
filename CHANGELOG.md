@@ -2,6 +2,21 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [2.5.0] - 2026-11-12
+
+### Added
+- **Dual UI Modes (Simple vs. Pro):** Integrated an Apple-style segmented mode switcher. **Simple Mode** presents a minimal, frictionless interface for casual users with quick CPS pills (`5 CPS`, `10 CPS`, `20 CPS`, `Custom`), Left/Right button choice, clean repeat controls, and dynamic content-fit window resizing. **Pro Mode** expands full controls for power users (Gaussian jitter, hold duty cycle, coordinate picker, multi-unit intervals, and preset profiles).
+- **Apple-Inspired Minimalist Brand Mark & Design Language:** Crafted a new minimalist geometric logo featuring a deep obsidian-to-graphite squircle, ambient violet glow, concentric precision touch rings, and a sculpted chevron pointer. Upgraded UI surfaces with Apple-style neutral tokens, refined specular borders, and softer corner radii (`RADIUS = 10`).
+- **Auditory Feedback Cues:** Added subtle, non-blocking auditory chimes when clicking starts (1320 Hz) and stops (880 Hz) so users get instant feedback in fullscreen apps, toggleable via a new header icon button (`Sound` / `Mute`).
+- **Profile Preset Export & Import:** Added JSON profile export and import capabilities in `Config` to back up, share, and migrate auto-clicking profiles.
+- **Tracked Unit Test Suite & CI Integration:** Added a comprehensive test suite in `tests/test_clickforge.py` (20 unit tests) covering configuration, migration, input parsing, timing conversions, engine lifecycles, hotkeys, and updater logic, with automatic test verification wired into `.github/workflows/build.yml`.
+
+### Fixed
+- **Window Positioning on Dynamic Layout Shifts:** Fixed `_fit_to_content` when resizing between Simple and Pro modes so the window preserves its exact on-screen position instead of jumping.
+- **Update Banner Attachment Safety:** Fixed update banner layout anchoring so notifications attach safely above content even when Pro telemetry cards are unpacked.
+
+---
+
 ## [2.4.0] - 2026-11-10
 
 ### Changed

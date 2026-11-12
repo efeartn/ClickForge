@@ -11,11 +11,11 @@ import copy
 import json
 import os
 import tempfile
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from platformdirs import user_config_dir
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 #: Fields that make up a profile (what presets control).
 PROFILE_DEFAULTS: Dict[str, Any] = {
@@ -38,9 +38,11 @@ PROFILE_DEFAULTS: Dict[str, Any] = {
 #: App-wide settings (not affected by presets).
 DEFAULTS: Dict[str, Any] = {
     "schema": SCHEMA_VERSION,
+    "ui_mode": "simple",         # simple | pro
     "profile": "Default",
     "theme": "System",           # System | Light | Dark
     "always_on_top": False,
+    "sound_cue": False,          # subtle audible cue on start/stop
     "hotkey": "f6",
     "trigger_mode": "toggle",    # toggle | hold
     "auto_update_check": True,
@@ -51,6 +53,7 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 _CHOICES = {
+    "ui_mode": ("simple", "pro"),
     "speed_unit": ("ms", "sec", "min", "cps"),
     "repeat_mode": ("infinite", "fixed"),
     "button": ("left", "right", "middle"),
@@ -61,6 +64,7 @@ _CHOICES = {
 }
 
 PROFILE_NAMES = ("Default", "Fast", "Humanized", "Custom")
+UI_MODES = ("simple", "pro")
 
 _MAY_BE_EMPTY = frozenset({"skipped_version"})
 
@@ -161,6 +165,33 @@ class Config:
         merged.update(PRESETS.get(name, {}))
         return _validate_profile(merged)
 
+    # ── Preset Import / Export ───────────────────────────────────────
+
+    def export_profile(self, dest_path: str, profile: Optional[Dict[str, Any]] = None) -> None:
+        """Write a validated preset profile to ``dest_path`` as JSON."""
+        clean = normalize_profile(profile if profile is not None else self.get("settings"))
+        payload = {
+            "app": "ClickForge",
+            "schema": SCHEMA_VERSION,
+            "profile": clean,
+        }
+        with open(dest_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+
+    def import_profile(self, src_path: str) -> Dict[str, Any]:
+        """Read, validate, and apply a preset profile from ``src_path``."""
+        with open(src_path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        if not isinstance(raw, dict):
+            raise ValueError("Preset file must contain a JSON object.")
+        profile_src = raw.get("profile") if isinstance(raw.get("profile"), dict) else raw
+        clean = normalize_profile(profile_src)
+        self.set("profile", "Custom")
+        self.set("settings", clean)
+        self.set("custom", clean)
+        self.save()
+        return clean
+
     # ── Persistence ──────────────────────────────────────────────────
 
     def load(self) -> None:
@@ -199,7 +230,15 @@ class Config:
 
     @staticmethod
     def _migrate(old: Dict[str, Any]) -> Dict[str, Any]:
-        """Map the flat v2.x config onto the current schema."""
+        """Migrate older schemas while preserving structured v2.2+ settings."""
+        # Schema 3 (v2.2–v2.4) already uses structured 'settings' and 'custom' dicts.
+        if isinstance(old.get("settings"), dict):
+            migrated = dict(old)
+            if "ui_mode" not in migrated:
+                migrated["ui_mode"] = "simple"
+            return migrated
+
+        # Legacy flat v2.0/v2.1 config
         settings = dict(PROFILE_DEFAULTS)
         unit = old.get("interval_unit", "ms")
         settings.update({
@@ -215,6 +254,7 @@ class Config:
             "humanize": bool(old.get("humanize", False)),
         })
         return {
+            "ui_mode": "simple",
             "hotkey": old.get("hotkey", "f6"),
             "theme": old.get("appearance_mode", "System"),
             "settings": settings,
