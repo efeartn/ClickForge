@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 import clickforge
 from clickforge.core import updater
@@ -50,6 +52,8 @@ from clickforge.core.validation import (
     to_interval_ms,
 )
 from clickforge.ui import theme as t
+from clickforge.ui.main_window import ClickForgeWindow
+from clickforge.ui.widgets import format_release_notes
 
 
 class DummyBackend(InputBackend):
@@ -80,8 +84,8 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.0.0")
-        self.assertEqual(clickforge.__codename__, "Obsidian")
+        self.assertEqual(clickforge.__version__, "3.1.0")
+        self.assertEqual(clickforge.__codename__, "Beacon")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
 
@@ -326,6 +330,116 @@ class TestUpdater(unittest.TestCase):
         self.assertTrue(updater.is_newer((2, 5, 1), (2, 5, 0)))
         self.assertFalse(updater.is_newer((2, 5, 0), (2, 5, 0)))
         self.assertFalse(updater.is_newer((2, 4, 0), (2, 5, 0)))
+
+    def test_format_release_notes(self):
+        raw = "## ClickForge v3.1.0\n\n### Highlights\n- **Auto Check:** Works on launch.\n- Added `v3.1.0` support."
+        cleaned = format_release_notes(raw)
+        self.assertIn("ClickForge v3.1.0", cleaned)
+        self.assertIn("\u2022 Auto Check: Works on launch.", cleaned)
+        self.assertIn("\u2022 Added v3.1.0 support.", cleaned)
+        self.assertNotIn("##", cleaned)
+        self.assertNotIn("**", cleaned)
+        self.assertNotIn("`", cleaned)
+
+
+class TestStartupUpdatePrompt(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+        self.cfg = Config(path=os.path.join(self.tmp_dir, "config.json"))
+        self.newer = updater.ReleaseInfo(
+            tag="v9.9.0",
+            version=(9, 9, 0),
+            title='v9.9.0 — "Future"',
+            page_url="https://github.com/efeartn/ClickForge/releases/tag/v9.9.0",
+            notes="## Highlights\n- **Faster:** Improved startup update checks.",
+            assets=(),
+        )
+        self.current = updater.ReleaseInfo(
+            tag=f"v{clickforge.__version__}",
+            version=updater.current_version(),
+            title=f"v{clickforge.__version__}",
+            page_url="https://github.com/efeartn/ClickForge/releases/latest",
+            notes="",
+            assets=(),
+        )
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _make_window(self):
+        with (
+            patch("clickforge.core.hotkeys.TriggerListener.start"),
+            patch("clickforge.ui.main_window.startup_warnings", return_value=[]),
+        ):
+            app = ClickForgeWindow(config=self.cfg)
+            self.assertIsNotNone(app._startup_update_job)
+            # Cancel scheduled background timers so unit tests control timing deterministically
+            for attr in ("_startup_update_job", "_startup_warn_job"):
+                job = getattr(app, attr, None)
+                if job is not None:
+                    app.after_cancel(job)
+                    setattr(app, attr, None)
+            app.update()
+            return app
+
+    def test_startup_check_runs_regardless_of_last_check_and_prompts_user(self):
+        # Even if last_update_check was just set, opening the app still checks
+        self.cfg.set("last_update_check", time.time())
+        app = self._make_window()
+        try:
+            with patch.object(app, "_check_for_updates") as mock_check:
+                app._maybe_auto_check_updates()
+                mock_check.assert_called_once_with(manual=False)
+
+            app._on_update_found((self.newer, False))
+            app.update()
+            self.assertIsNotNone(app._update_dialog)
+            self.assertEqual(app._update_release, self.newer)
+
+            # Clicking "Not Now" closes dialog without skipping the version
+            app._update_dialog.later_btn.invoke()
+            self.assertIsNone(app._update_dialog)
+            self.assertEqual(self.cfg.get("skipped_version"), "")
+        finally:
+            app._on_close()
+
+    def test_startup_check_respects_auto_update_disabled_and_skip(self):
+        self.cfg.set("auto_update_check", False)
+        app = self._make_window()
+        try:
+            with patch.object(app, "_check_for_updates") as mock_check:
+                app._maybe_auto_check_updates()
+                mock_check.assert_not_called()
+
+            # Up-to-date release does not prompt on startup
+            app._on_update_found((self.current, False))
+            self.assertIsNone(app._update_dialog)
+
+            # Newer release prompts, and Skip records skipped_version
+            app._on_update_found((self.newer, False))
+            app.update()
+            self.assertIsNotNone(app._update_dialog)
+            app._update_dialog._choose_skip()
+            self.assertIsNone(app._update_dialog)
+            self.assertEqual(self.cfg.get("skipped_version"), "9.9.0")
+
+            # Subsequent startup auto-check does not re-open prompt for skipped version
+            app._on_update_found((self.newer, False))
+            self.assertIsNone(app._update_dialog)
+        finally:
+            app._on_close()
+
+    def test_active_engine_uses_non_intrusive_banner_instead_of_dialog(self):
+        app = self._make_window()
+        try:
+            with patch.object(
+                type(app._engine), "is_active", property(lambda _self: True)
+            ):
+                app._on_update_found((self.newer, False))
+                self.assertIsNone(app._update_dialog)
+                self.assertTrue(bool(app.update_banner.winfo_manager()))
+        finally:
+            app._on_close()
 
 
 if __name__ == "__main__":

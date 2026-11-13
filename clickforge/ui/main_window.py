@@ -62,6 +62,7 @@ from clickforge.ui.widgets import (
     StatusBadge,
     Typography,
     UpdateBanner,
+    UpdatePromptDialog,
     accent_button,
     caption,
     ghost_button,
@@ -76,8 +77,8 @@ POLL_INTERVAL_MS = 20
 TELEMETRY_EVERY = 3
 #: Minimum logical window width; the height always fits the content.
 MIN_WIDTH = 460
-#: Automatic update checks run at most this often (seconds).
-UPDATE_CHECK_INTERVAL = 6 * 60 * 60
+#: Delay (ms) after startup before running the automatic update check.
+STARTUP_UPDATE_DELAY_MS = 600
 
 
 class ClickForgeWindow(ctk.CTk):
@@ -103,6 +104,7 @@ class ClickForgeWindow(ctk.CTk):
         # Keep icon references alive so GC never collects them
         self._icon_photos: List[ImageTk.PhotoImage] = []
         self._header_logo: Optional[ctk.CTkImage] = None
+        self._dialog_logo: Optional[ctk.CTkImage] = None
         self._apply_window_icon()
         # CustomTkinter schedules its own iconbitmap override at 200ms after __init__
         self.after(240, self._apply_window_icon)
@@ -145,6 +147,10 @@ class ClickForgeWindow(ctk.CTk):
         self._update_busy: bool = False
         self._update_cancel: Optional[threading.Event] = None
         self._update_hide_job: Optional[str] = None
+        self._update_dialog: Optional[UpdatePromptDialog] = None
+        self._poll_job: Optional[str] = None
+        self._startup_warn_job: Optional[str] = None
+        self._startup_update_job: Optional[str] = None
         self._closing: bool = False
 
         self._build_ui()
@@ -156,9 +162,11 @@ class ClickForgeWindow(ctk.CTk):
         self.bind_all("<Button-1>", self._on_global_click, add="+")
 
         self._hotkeys.start()
-        self.after(POLL_INTERVAL_MS, self._poll)
-        self.after(400, self._check_platform_warnings)
-        self.after(2500, self._maybe_auto_check_updates)
+        self._poll_job = self.after(POLL_INTERVAL_MS, self._poll)
+        self._startup_warn_job = self.after(400, self._check_platform_warnings)
+        self._startup_update_job = self.after(
+            STARTUP_UPDATE_DELAY_MS, self._maybe_auto_check_updates
+        )
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ── Layout ───────────────────────────────────────────────────────
@@ -246,6 +254,9 @@ class ClickForgeWindow(ctk.CTk):
                 pil_logo = Image.open(png_path).convert("RGBA")
                 self._header_logo = ctk.CTkImage(
                     light_image=pil_logo, dark_image=pil_logo, size=(22, 22)
+                )
+                self._dialog_logo = ctk.CTkImage(
+                    light_image=pil_logo, dark_image=pil_logo, size=(34, 34)
                 )
                 ctk.CTkLabel(brand, text="", image=self._header_logo).pack(
                     side="left", padx=(0, 8)
@@ -1253,6 +1264,7 @@ class ClickForgeWindow(ctk.CTk):
             or self._picking_coords
         ):
             return
+        self._close_update_dialog()
         if self._focused_entries > 0:
             self.focus_set()
         snapshot = self._build_settings_snapshot()
@@ -1297,7 +1309,7 @@ class ClickForgeWindow(ctk.CTk):
                 self._shown_total = total
                 self.total_value_lbl.configure(text=f"Total: {total:,}")
 
-        self.after(POLL_INTERVAL_MS, self._poll)
+        self._poll_job = self.after(POLL_INTERVAL_MS, self._poll)
 
     def _handle_event(self, kind: str, payload: Any) -> None:
         if kind == "trigger_press":
@@ -1501,10 +1513,65 @@ class ClickForgeWindow(ctk.CTk):
     def _maybe_auto_check_updates(self) -> None:
         if self._closing or not self._config.get("auto_update_check"):
             return
-        last_check = float(self._config.get("last_update_check") or 0.0)
-        if time.time() - last_check < UPDATE_CHECK_INTERVAL:
-            return
         self._check_for_updates(manual=False)
+
+    def _close_update_dialog(self) -> None:
+        if self._update_dialog is not None:
+            self._update_dialog.close()
+            self._update_dialog = None
+
+    def _prompt_user_for_update(self, release: updater.ReleaseInfo) -> None:
+        if self._closing:
+            return
+        if self._engine.is_active:
+            self._show_banner(
+                title=f"Update available: v{release.version_text}",
+                detail=f"You're on v{__version__} · Update now?",
+                actions=(
+                    ("Update Now", self._start_update_install, True),
+                    ("Later", self._hide_banner, False),
+                    ("Skip", self._skip_update, False),
+                ),
+                tone="accent",
+            )
+            return
+
+        self._hide_banner()
+        self._close_update_dialog()
+
+        can_self, _reason = updater.can_self_update()
+        primary_label = "Update Now" if can_self else "Download Update"
+        question = (
+            "Would you like to download and install this update now?"
+            if can_self
+            else "Would you like to open the download page for this update?"
+        )
+
+        def accept() -> None:
+            self._update_dialog = None
+            self._start_update_install()
+
+        def later() -> None:
+            self._update_dialog = None
+
+        def skip() -> None:
+            self._update_dialog = None
+            self._skip_update()
+
+        ico_path = resource_path("assets", "icon.ico")
+        self._update_dialog = UpdatePromptDialog(
+            self,
+            self._typo,
+            headline=f"Update Available: v{release.version_text}",
+            subhead=f"You are currently using v{__version__}.\n{question}",
+            notes=release.notes,
+            primary_label=primary_label,
+            on_update=accept,
+            on_later=later,
+            on_skip=skip,
+            logo_image=self._dialog_logo,
+            ico_path=ico_path if os.path.exists(ico_path) else None,
+        )
 
     def _check_for_updates(self, manual: bool = False) -> None:
         if self._update_busy or self._closing:
@@ -1548,16 +1615,7 @@ class ClickForgeWindow(ctk.CTk):
             self._update_header_buttons()
             if not manual and release.version_text == self._config.get("skipped_version"):
                 return
-            self._show_banner(
-                title=f"Update available: v{release.version_text}",
-                detail=f"Installed v{__version__}",
-                actions=(
-                    ("Update", self._start_update_install, True),
-                    ("Later", self._hide_banner, False),
-                    ("Skip", self._skip_update, False),
-                ),
-                tone="accent",
-            )
+            self._prompt_user_for_update(release)
         else:
             self._update_release = None
             self._update_header_buttons()
@@ -1727,6 +1785,16 @@ class ClickForgeWindow(ctk.CTk):
     def _on_close(self) -> None:
         self._closing = True
         self._cancel_banner_timer()
+        for job in (self._poll_job, self._startup_warn_job, self._startup_update_job):
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+        self._poll_job = None
+        self._startup_warn_job = None
+        self._startup_update_job = None
+        self._close_update_dialog()
         if self._update_cancel is not None:
             self._update_cancel.set()
         try:
@@ -1735,4 +1803,9 @@ class ClickForgeWindow(ctk.CTk):
             pass
         self._hotkeys.stop()
         self._engine.stop(wait=True, timeout=0.8)
+        try:
+            for after_id in self.tk.splitlist(self.tk.call("after", "info")):
+                self.after_cancel(after_id)
+        except tk.TclError:
+            pass
         self.destroy()

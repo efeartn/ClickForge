@@ -2,6 +2,18 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.1.0] - 2026-11-13 — "Beacon"
+
+### Added
+- **Every-Launch Automatic Update Check:** Removed the 6-hour startup suppression window so ClickForge automatically checks GitHub Releases shortly after opening (`600 ms`) whenever `auto_update_check` is enabled.
+- **Interactive Update Prompt Dialog (`UpdatePromptDialog`):** Added a themed modal prompt centered on the app window (including multi-monitor desktops) displaying version details, formatted `"What's New"` release notes, and clear choices (**Update Now** / **Not Now** / **Skip Version**).
+- **Non-Intrusive Active-Clicking Fallback:** If the click engine is already active when an update check finishes, ClickForge displays the inline `UpdateBanner` instead of popping a dialog over active clicking; starting via hotkey also dismisses any open prompt cleanly.
+
+### Fixed
+- **Clean Shutdown Timer Cancellation:** Tracked and canceled scheduled startup, icon, and polling `after` timers in `_on_close()` and `UpdatePromptDialog.close()` to prevent late Tkinter callbacks during rapid exit.
+
+---
+
 ## [3.0.0] - 2026-11-12 — "Obsidian"
 
 ### Added

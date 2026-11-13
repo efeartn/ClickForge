@@ -134,7 +134,7 @@ ClickForge/
 │   ├── build.bat                 # Windows one-command build wrapper
 │   └── generate_assets.py        # Deterministic SVG/PNG/ICO/ICNS asset generator
 ├── tests/
-│   └── test_clickforge.py        # Automated test suite (20 unit tests)
+│   └── test_clickforge.py        # Automated test suite (24 unit tests)
 ├── build.py                      # Cross-platform PyInstaller build script
 ├── clickforge.spec               # PyInstaller specification
 ├── main.py                       # Root entry script

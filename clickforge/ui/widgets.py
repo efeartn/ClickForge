@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import re
 from typing import Callable, Dict, Optional, Sequence
 
 import tkinter as tk
 
 import customtkinter as ctk
 
+from clickforge.core.system import virtual_screen_bounds
 from clickforge.ui import theme as t
 from clickforge.ui.theme import Fonts
 
@@ -308,3 +311,240 @@ class UpdateBanner(ctk.CTkFrame):
     def set_progress(self, fraction: float, detail: str) -> None:
         self.progress.set(max(0.0, min(1.0, fraction)))
         self.detail.configure(text=detail)
+
+
+def format_release_notes(notes: str, max_chars: int = 1200) -> str:
+    """Turn GitHub Markdown release notes into clean, readable plain text."""
+    lines = []
+    for raw in (notes or "").splitlines():
+        line = raw.strip()
+        if not line:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        line = re.sub(r"^#{1,6}\s+", "", line)
+        line = re.sub(r"^[-*+]\s+", "\u2022 ", line)
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+        line = re.sub(r"`(.+?)`", r"\1", line)
+        lines.append(line)
+    while lines and lines[-1] == "":
+        lines.pop()
+    text = "\n".join(lines).strip()
+    if len(text) > max_chars:
+        text = text[: max_chars - 3].rstrip() + "..."
+    return text
+
+
+class UpdatePromptDialog(ctk.CTkToplevel):
+    """Themed prompt asking whether the user wants to install an available update."""
+
+    def __init__(
+        self,
+        parent,
+        typo: Typography,
+        *,
+        headline: str,
+        subhead: str,
+        notes: str = "",
+        primary_label: str = "Update Now",
+        on_update: Callable[[], None],
+        on_later: Callable[[], None],
+        on_skip: Callable[[], None],
+        logo_image: Optional[ctk.CTkImage] = None,
+        ico_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.withdraw()
+        self.title("ClickForge Update")
+        self.resizable(False, False)
+        self.configure(fg_color=t.BG)
+        self.transient(parent)
+
+        self._on_update = on_update
+        self._on_later = on_later
+        self._on_skip = on_skip
+        self._closed = False
+
+        try:
+            if parent.attributes("-topmost"):
+                self.attributes("-topmost", True)
+        except Exception:
+            pass
+
+        self._ico_job: Optional[str] = None
+        if ico_path and os.path.exists(ico_path):
+            def _apply_ico() -> None:
+                self._ico_job = None
+                if not self.winfo_exists():
+                    return
+                try:
+                    self.iconbitmap(ico_path)
+                    self.wm_iconbitmap(ico_path)
+                except Exception:
+                    pass
+
+            _apply_ico()
+            self._ico_job = self.after(240, _apply_ico)
+
+        card = ctk.CTkFrame(
+            self,
+            fg_color=t.SURFACE,
+            border_color=t.BORDER,
+            border_width=1,
+            corner_radius=t.RADIUS,
+        )
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=16)
+
+        hdr = ctk.CTkFrame(body, fg_color="transparent")
+        hdr.pack(fill="x", pady=(0, 10))
+        if logo_image is not None:
+            ctk.CTkLabel(hdr, text="", image=logo_image).pack(
+                side="left", anchor="n", padx=(0, 12), pady=(2, 0)
+            )
+
+        title_col = ctk.CTkFrame(hdr, fg_color="transparent")
+        title_col.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(
+            title_col,
+            text=headline,
+            font=typo.title,
+            text_color=t.TEXT,
+            anchor="w",
+        ).pack(fill="x")
+        ctk.CTkLabel(
+            title_col,
+            text=subhead,
+            font=typo.body,
+            text_color=t.TEXT_MUTED,
+            anchor="w",
+            justify="left",
+            wraplength=316,
+        ).pack(fill="x", pady=(4, 0))
+
+        cleaned_notes = format_release_notes(notes)
+        if cleaned_notes:
+            ctk.CTkLabel(
+                body,
+                text="WHAT'S NEW",
+                font=typo.section,
+                text_color=t.TEXT_FAINT,
+                anchor="w",
+                height=16,
+            ).pack(fill="x", pady=(2, 4))
+            notes_box = ctk.CTkTextbox(
+                body,
+                width=360,
+                height=118,
+                fg_color=t.FIELD,
+                border_color=t.BORDER,
+                border_width=1,
+                corner_radius=t.RADIUS_SM,
+                text_color=t.TEXT_MUTED,
+                font=typo.caption,
+                wrap="word",
+            )
+            notes_box.pack(fill="x", pady=(0, 14))
+            notes_box.insert("1.0", cleaned_notes)
+            notes_box.configure(state="disabled")
+
+        footer = ctk.CTkFrame(body, fg_color="transparent")
+        footer.pack(fill="x")
+
+        skip_btn = ctk.CTkButton(
+            footer,
+            text="Skip Version",
+            width=0,
+            height=30,
+            corner_radius=t.RADIUS_SM,
+            border_width=0,
+            fg_color="transparent",
+            hover_color=t.HOVER,
+            text_color=t.TEXT_FAINT,
+            font=typo.caption,
+            command=self._choose_skip,
+        )
+        skip_btn.pack(side="left")
+
+        self.update_now_btn = accent_button(
+            footer,
+            typo,
+            primary_label,
+            self._choose_update,
+            width=112,
+            height=30,
+            font=typo.label,
+        )
+        self.update_now_btn.pack(side="right", padx=(8, 0))
+
+        self.later_btn = ghost_button(
+            footer,
+            typo,
+            "Not Now",
+            self._choose_later,
+            width=76,
+        )
+        self.later_btn.configure(height=30)
+        self.later_btn.pack(side="right")
+
+        self.protocol("WM_DELETE_WINDOW", self._choose_later)
+        self.bind("<Escape>", lambda _e: self._choose_later())
+
+        self._center_on_parent(parent)
+        self.deiconify()
+        self.lift()
+        try:
+            self.grab_set()
+        except tk.TclError:
+            pass
+
+    def _center_on_parent(self, parent) -> None:
+        self.update_idletasks()
+        dw = self.winfo_reqwidth()
+        dh = self.winfo_reqheight()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        bounds = virtual_screen_bounds()
+        if bounds is not None:
+            vleft, vtop, vw, vh = bounds
+        else:
+            vleft, vtop = 0, 0
+            vw, vh = self.winfo_screenwidth(), self.winfo_screenheight()
+        x = px + (pw - dw) // 2 if pw > 10 else vleft + (vw - dw) // 2
+        y = py + (ph - dh) // 2 if ph > 10 else vtop + (vh - dh) // 2
+        x = max(vleft + 16, min(x, max(vleft + 16, vleft + vw - dw - 16)))
+        y = max(vtop + 16, min(y, max(vtop + 16, vtop + vh - dh - 16)))
+        self.geometry(f"+{x}+{y}")
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._ico_job is not None:
+            try:
+                self.after_cancel(self._ico_job)
+            except tk.TclError:
+                pass
+            self._ico_job = None
+        try:
+            if self.winfo_exists():
+                self.grab_release()
+                self.destroy()
+        except tk.TclError:
+            pass
+
+    def _choose_update(self) -> None:
+        self.close()
+        self._on_update()
+
+    def _choose_later(self) -> None:
+        self.close()
+        self._on_later()
+
+    def _choose_skip(self) -> None:
+        self.close()
+        self._on_skip()
