@@ -335,35 +335,31 @@ def format_release_notes(notes: str, max_chars: int = 1200) -> str:
     return text
 
 
-class UpdatePromptDialog(ctk.CTkToplevel):
-    """Themed prompt asking whether the user wants to install an available update."""
+class _ModalDialog(ctk.CTkToplevel):
+    """Shared modal dialog shell matching ClickForge's Obsidian card aesthetic."""
 
     def __init__(
         self,
         parent,
         typo: Typography,
         *,
+        title: str,
         headline: str,
         subhead: str,
-        notes: str = "",
-        primary_label: str = "Update Now",
-        on_update: Callable[[], None],
-        on_later: Callable[[], None],
-        on_skip: Callable[[], None],
+        on_cancel: Callable[[], None],
         logo_image: Optional[ctk.CTkImage] = None,
         ico_path: Optional[str] = None,
     ) -> None:
         super().__init__(parent)
         self.withdraw()
-        self.title("ClickForge Update")
+        self.title(title)
         self.resizable(False, False)
         self.configure(fg_color=t.BG)
         self.transient(parent)
 
-        self._on_update = on_update
-        self._on_later = on_later
-        self._on_skip = on_skip
+        self._on_cancel = on_cancel
         self._closed = False
+        self._parent_ref = parent
 
         try:
             if parent.attributes("-topmost"):
@@ -395,10 +391,10 @@ class UpdatePromptDialog(ctk.CTkToplevel):
         )
         card.pack(fill="both", expand=True, padx=14, pady=14)
 
-        body = ctk.CTkFrame(card, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=16, pady=16)
+        self._body = ctk.CTkFrame(card, fg_color="transparent")
+        self._body.pack(fill="both", expand=True, padx=16, pady=16)
 
-        hdr = ctk.CTkFrame(body, fg_color="transparent")
+        hdr = ctk.CTkFrame(self._body, fg_color="transparent")
         hdr.pack(fill="x", pady=(0, 10))
         if logo_image is not None:
             ctk.CTkLabel(hdr, text="", image=logo_image).pack(
@@ -424,81 +420,20 @@ class UpdatePromptDialog(ctk.CTkToplevel):
             wraplength=316,
         ).pack(fill="x", pady=(4, 0))
 
-        cleaned_notes = format_release_notes(notes)
-        if cleaned_notes:
-            ctk.CTkLabel(
-                body,
-                text="WHAT'S NEW",
-                font=typo.section,
-                text_color=t.TEXT_FAINT,
-                anchor="w",
-                height=16,
-            ).pack(fill="x", pady=(2, 4))
-            notes_box = ctk.CTkTextbox(
-                body,
-                width=360,
-                height=118,
-                fg_color=t.FIELD,
-                border_color=t.BORDER,
-                border_width=1,
-                corner_radius=t.RADIUS_SM,
-                text_color=t.TEXT_MUTED,
-                font=typo.caption,
-                wrap="word",
-            )
-            notes_box.pack(fill="x", pady=(0, 14))
-            notes_box.insert("1.0", cleaned_notes)
-            notes_box.configure(state="disabled")
-
-        footer = ctk.CTkFrame(body, fg_color="transparent")
-        footer.pack(fill="x")
-
-        skip_btn = ctk.CTkButton(
-            footer,
-            text="Skip Version",
-            width=0,
-            height=30,
-            corner_radius=t.RADIUS_SM,
-            border_width=0,
-            fg_color="transparent",
-            hover_color=t.HOVER,
-            text_color=t.TEXT_FAINT,
-            font=typo.caption,
-            command=self._choose_skip,
-        )
-        skip_btn.pack(side="left")
-
-        self.update_now_btn = accent_button(
-            footer,
-            typo,
-            primary_label,
-            self._choose_update,
-            width=112,
-            height=30,
-            font=typo.label,
-        )
-        self.update_now_btn.pack(side="right", padx=(8, 0))
-
-        self.later_btn = ghost_button(
-            footer,
-            typo,
-            "Not Now",
-            self._choose_later,
-            width=76,
-        )
-        self.later_btn.configure(height=30)
-        self.later_btn.pack(side="right")
-
-        self.protocol("WM_DELETE_WINDOW", self._choose_later)
-        self.bind("<Escape>", lambda _e: self._choose_later())
-
-        self._center_on_parent(parent)
+    def _finalize(self) -> None:
+        self.protocol("WM_DELETE_WINDOW", self._cancel_and_close)
+        self.bind("<Escape>", lambda _e: self._cancel_and_close())
+        self._center_on_parent(self._parent_ref)
         self.deiconify()
         self.lift()
         try:
             self.grab_set()
         except tk.TclError:
             pass
+
+    def _cancel_and_close(self) -> None:
+        self.close()
+        self._on_cancel()
 
     def _center_on_parent(self, parent) -> None:
         self.update_idletasks()
@@ -537,14 +472,198 @@ class UpdatePromptDialog(ctk.CTkToplevel):
         except tk.TclError:
             pass
 
+
+class UpdatePromptDialog(_ModalDialog):
+    """Themed prompt asking whether the user wants to install an available update."""
+
+    def __init__(
+        self,
+        parent,
+        typo: Typography,
+        *,
+        headline: str,
+        subhead: str,
+        notes: str = "",
+        primary_label: str = "Update Now",
+        on_update: Callable[[], None],
+        on_later: Callable[[], None],
+        on_skip: Callable[[], None],
+        logo_image: Optional[ctk.CTkImage] = None,
+        ico_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            typo,
+            title="ClickForge Update",
+            headline=headline,
+            subhead=subhead,
+            on_cancel=on_later,
+            logo_image=logo_image,
+            ico_path=ico_path,
+        )
+        self._on_update = on_update
+        self._on_skip = on_skip
+
+        cleaned_notes = format_release_notes(notes)
+        if cleaned_notes:
+            ctk.CTkLabel(
+                self._body,
+                text="WHAT'S NEW",
+                font=typo.section,
+                text_color=t.TEXT_FAINT,
+                anchor="w",
+                height=16,
+            ).pack(fill="x", pady=(2, 4))
+            notes_box = ctk.CTkTextbox(
+                self._body,
+                width=360,
+                height=118,
+                fg_color=t.FIELD,
+                border_color=t.BORDER,
+                border_width=1,
+                corner_radius=t.RADIUS_SM,
+                text_color=t.TEXT_MUTED,
+                font=typo.caption,
+                wrap="word",
+            )
+            notes_box.pack(fill="x", pady=(0, 14))
+            notes_box.insert("1.0", cleaned_notes)
+            notes_box.configure(state="disabled")
+
+        footer = ctk.CTkFrame(self._body, fg_color="transparent")
+        footer.pack(fill="x")
+
+        skip_btn = ctk.CTkButton(
+            footer,
+            text="Skip Version",
+            width=0,
+            height=30,
+            corner_radius=t.RADIUS_SM,
+            border_width=0,
+            fg_color="transparent",
+            hover_color=t.HOVER,
+            text_color=t.TEXT_FAINT,
+            font=typo.caption,
+            command=self._choose_skip,
+        )
+        skip_btn.pack(side="left")
+
+        self.update_now_btn = accent_button(
+            footer,
+            typo,
+            primary_label,
+            self._choose_update,
+            width=112,
+            height=30,
+            font=typo.label,
+        )
+        self.update_now_btn.pack(side="right", padx=(8, 0))
+
+        self.later_btn = ghost_button(
+            footer,
+            typo,
+            "Not Now",
+            self._cancel_and_close,
+            width=76,
+        )
+        self.later_btn.configure(height=30)
+        self.later_btn.pack(side="right")
+
+        self._finalize()
+
     def _choose_update(self) -> None:
         self.close()
         self._on_update()
 
-    def _choose_later(self) -> None:
-        self.close()
-        self._on_later()
-
     def _choose_skip(self) -> None:
         self.close()
         self._on_skip()
+
+
+class SetupPromptDialog(_ModalDialog):
+    """Modal prompt to install ClickForge into Windows Programs & Start Menu."""
+
+    def __init__(
+        self,
+        parent,
+        typo: Typography,
+        *,
+        headline: str,
+        subhead: str,
+        details: str,
+        primary_label: str = "Install Now",
+        show_desktop_option: bool = True,
+        on_confirm: Callable[[bool], None],
+        on_cancel: Optional[Callable[[], None]] = None,
+        logo_image: Optional[ctk.CTkImage] = None,
+        ico_path: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            typo,
+            title="ClickForge Setup",
+            headline=headline,
+            subhead=subhead,
+            on_cancel=on_cancel or (lambda: None),
+            logo_image=logo_image,
+            ico_path=ico_path,
+        )
+        self._on_confirm = on_confirm
+
+        info = ctk.CTkLabel(
+            self._body,
+            text=details,
+            font=typo.caption,
+            text_color=t.TEXT_MUTED,
+            anchor="w",
+            justify="left",
+            wraplength=360,
+        )
+        info.pack(fill="x", pady=(2, 10))
+
+        self.desktop_var = tk.BooleanVar(value=True)
+        if show_desktop_option:
+            ctk.CTkCheckBox(
+                self._body,
+                text="Create Desktop shortcut",
+                variable=self.desktop_var,
+                font=typo.label,
+                text_color=t.TEXT,
+                fg_color=t.ACCENT,
+                hover_color=t.ACCENT_HOVER,
+                border_color=t.BORDER_STRONG,
+                checkbox_width=18,
+                checkbox_height=18,
+                corner_radius=4,
+            ).pack(anchor="w", pady=(0, 14))
+
+        footer = ctk.CTkFrame(self._body, fg_color="transparent")
+        footer.pack(fill="x")
+
+        self.confirm_btn = accent_button(
+            footer,
+            typo,
+            primary_label,
+            self._choose_confirm,
+            width=128,
+            height=30,
+            font=typo.label,
+        )
+        self.confirm_btn.pack(side="right", padx=(8, 0))
+
+        self.cancel_btn = ghost_button(
+            footer,
+            typo,
+            "Cancel",
+            self._cancel_and_close,
+            width=76,
+        )
+        self.cancel_btn.configure(height=30)
+        self.cancel_btn.pack(side="right")
+
+        self._finalize()
+
+    def _choose_confirm(self) -> None:
+        create_desktop = bool(self.desktop_var.get())
+        self.close()
+        self._on_confirm(create_desktop)

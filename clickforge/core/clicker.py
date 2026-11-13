@@ -31,7 +31,7 @@ CORNER_FAILSAFE_PX = 2
 class ClickSettings:
     """Immutable snapshot of everything the worker needs."""
 
-    interval_ms: float = 100.0
+    interval_ms: float = 10.0
     button: str = "left"
     double: bool = False
     #: Number of click actions to perform; 0 means run until stopped.
@@ -61,7 +61,7 @@ class ClickSettings:
         if hold_lo > hold_hi:
             hold_lo, hold_hi = hold_hi, hold_lo
         return ClickSettings(
-            interval_ms=min(max(finite(self.interval_ms, 100.0), MIN_INTERVAL_MS), MAX_INTERVAL_MS),
+            interval_ms=min(max(finite(self.interval_ms, 10.0), MIN_INTERVAL_MS), MAX_INTERVAL_MS),
             button=self.button if self.button in BUTTONS else "left",
             double=bool(self.double),
             repeat_count=max(0, int(self.repeat_count or 0)),

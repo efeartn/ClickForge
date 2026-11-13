@@ -21,7 +21,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from clickforge import __app_name__, __codename__, __version__
-from clickforge.core import updater
+from clickforge.core import installer, updater
 from clickforge.core.clicker import ClickEngine, ClickSettings
 from clickforge.core.config import PROFILE_NAMES, Config, normalize_profile
 from clickforge.core.hotkeys import (
@@ -59,6 +59,7 @@ from clickforge.ui.widgets import (
     FormRow,
     NumberEntry,
     Segmented,
+    SetupPromptDialog,
     StatusBadge,
     Typography,
     UpdateBanner,
@@ -76,7 +77,7 @@ POLL_INTERVAL_MS = 20
 #: Telemetry repaints every N polls (3 x 20 ms = ~16 Hz).
 TELEMETRY_EVERY = 3
 #: Minimum logical window width; the height always fits the content.
-MIN_WIDTH = 460
+MIN_WIDTH = 476
 #: Delay (ms) after startup before running the automatic update check.
 STARTUP_UPDATE_DELAY_MS = 600
 
@@ -93,6 +94,7 @@ class ClickForgeWindow(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         super().__init__()
+        self.withdraw()
 
         self.title(__app_name__)
         self.resizable(False, False)
@@ -102,6 +104,7 @@ class ClickForgeWindow(ctk.CTk):
         self._typo = Typography(self._fonts)
 
         # Keep icon references alive so GC never collects them
+        self._pil_logo: Optional[Image.Image] = None
         self._icon_photos: List[ImageTk.PhotoImage] = []
         self._header_logo: Optional[ctk.CTkImage] = None
         self._dialog_logo: Optional[ctk.CTkImage] = None
@@ -128,11 +131,10 @@ class ClickForgeWindow(ctk.CTk):
 
         self._always_on_top: bool = bool(self._config.get("always_on_top"))
         self._sound_cue: bool = bool(self._config.get("sound_cue"))
-        self._ui_mode: str = self._config.get("ui_mode") or "simple"
         self._trigger_mode: str = self._config.get("trigger_mode")
         self._current_profile: str = self._config.get("profile")
         self._speed_unit: str = "ms"
-        self._last_valid_speed: float = 100.0
+        self._last_valid_speed: float = 10.0
         self._recording_hotkey: bool = False
         self._picking_coords: bool = False
         self._focused_entries: int = 0
@@ -141,13 +143,15 @@ class ClickForgeWindow(ctk.CTk):
         self._shown_cps: Optional[Tuple[int, bool]] = None
         self._shown_total: Optional[int] = None
 
-        # Auto-updater state
+        # Auto-updater & Windows Setup state
         self._update_release: Optional[updater.ReleaseInfo] = None
         self._staged_update: Optional[Tuple[str, str, updater.ReleaseInfo]] = None
         self._update_busy: bool = False
+        self._setup_busy: bool = False
         self._update_cancel: Optional[threading.Event] = None
         self._update_hide_job: Optional[str] = None
         self._update_dialog: Optional[UpdatePromptDialog] = None
+        self._setup_dialog: Optional[SetupPromptDialog] = None
         self._poll_job: Optional[str] = None
         self._startup_warn_job: Optional[str] = None
         self._startup_update_job: Optional[str] = None
@@ -157,6 +161,7 @@ class ClickForgeWindow(ctk.CTk):
         self._load_from_config()
         self._apply_always_on_top()
         self._fit_to_content(center=True)
+        self.deiconify()
 
         # Clicking neutral background defocuses active entry fields
         self.bind_all("<Button-1>", self._on_global_click, add="+")
@@ -220,13 +225,18 @@ class ClickForgeWindow(ctk.CTk):
         except Exception:
             pass
         try:
-            src = png_path if os.path.exists(png_path) else ico_path
-            if os.path.exists(src):
-                base_img = Image.open(src).convert("RGBA")
-                self._icon_photos = [
-                    ImageTk.PhotoImage(base_img.resize((sz, sz), Image.Resampling.LANCZOS))
-                    for sz in (16, 24, 32, 48, 64, 128, 256)
-                ]
+            if not self._icon_photos:
+                src = png_path if os.path.exists(png_path) else ico_path
+                if os.path.exists(src):
+                    if self._pil_logo is None:
+                        self._pil_logo = Image.open(src).convert("RGBA")
+                    self._icon_photos = [
+                        ImageTk.PhotoImage(
+                            self._pil_logo.resize((sz, sz), Image.Resampling.LANCZOS)
+                        )
+                        for sz in (16, 24, 32, 48, 64)
+                    ]
+            if self._icon_photos:
                 self.wm_iconphoto(True, *self._icon_photos)
         except Exception:
             pass
@@ -244,19 +254,24 @@ class ClickForgeWindow(ctk.CTk):
         # 1. Header Bar
         hdr = ctk.CTkFrame(self, fg_color="transparent")
         hdr.pack(fill="x", padx=pad, pady=(14, 10))
+        self.hdr = hdr
 
         brand = ctk.CTkFrame(hdr, fg_color="transparent")
         brand.pack(side="left")
 
         png_path = resource_path("assets", "icon.png")
-        if os.path.exists(png_path):
+        if self._pil_logo is None and os.path.exists(png_path):
             try:
-                pil_logo = Image.open(png_path).convert("RGBA")
+                self._pil_logo = Image.open(png_path).convert("RGBA")
+            except Exception:
+                pass
+        if self._pil_logo is not None:
+            try:
                 self._header_logo = ctk.CTkImage(
-                    light_image=pil_logo, dark_image=pil_logo, size=(22, 22)
+                    light_image=self._pil_logo, dark_image=self._pil_logo, size=(22, 22)
                 )
                 self._dialog_logo = ctk.CTkImage(
-                    light_image=pil_logo, dark_image=pil_logo, size=(34, 34)
+                    light_image=self._pil_logo, dark_image=self._pil_logo, size=(34, 34)
                 )
                 ctk.CTkLabel(brand, text="", image=self._header_logo).pack(
                     side="left", padx=(0, 8)
@@ -274,9 +289,21 @@ class ClickForgeWindow(ctk.CTk):
             text_color=t.TEXT_FAINT,
         ).pack(side="left", padx=(6, 0), pady=(2, 0))
 
-        # Right-side header controls: Status Badge | Update | Pin | Theme | Sound
+        # Right-side header controls: Sound | Theme | Pin | Update | [Setup] | Status Badge
         self.status_badge = StatusBadge(hdr, typo)
         self.status_badge.pack(side="right")
+
+        self.setup_btn: Optional[ctk.CTkButton] = None
+        if installer.IS_WINDOWS and not installer.is_installed_in_programs():
+            self.setup_btn = ghost_button(
+                hdr,
+                typo,
+                text="Setup",
+                command=self._open_windows_setup,
+                width=50,
+            )
+            self.setup_btn.configure(height=28, font=typo.caption)
+            self.setup_btn.pack(side="right", padx=(6, 0))
 
         self.update_btn = icon_button(
             hdr,
@@ -314,65 +341,10 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.sound_btn.pack(side="right", padx=(6, 0))
 
-        # Mode Switcher Bar (Apple-style minimalist segmented control)
-        self.mode_bar = ctk.CTkFrame(self, fg_color="transparent")
-        self.mode_bar.pack(fill="x", padx=pad, pady=(0, 10))
-
-        self.mode_seg = Segmented(
-            self.mode_bar,
-            typo,
-            options={"simple": "Simple Mode", "pro": "Pro Mode"},
-            command=self._on_ui_mode_changed,
-        )
-        self.mode_seg.pack(fill="x")
-
-        # Update notice slot (packed on demand, right under the mode bar)
+        # Update / Setup notice slot (packed on demand right under header)
         self.update_banner = UpdateBanner(self, typo)
 
-        # 2a. Simple Mode Card (Clean, minimal, un-intimidating for everyday users)
-        self.simple_card = Card(self, typo, title="Quick Setup")
-
-        # Speed row (CPS preset pills + optional custom entry)
-        self.simple_speed_row = FormRow(self.simple_card.body, typo, label="Speed")
-        self.simple_cps_seg = Segmented(
-            self.simple_speed_row.content,
-            typo,
-            options={"5": "5 CPS", "10": "10 CPS", "20": "20 CPS", "custom": "Custom"},
-            command=self._on_simple_cps_selected,
-        )
-        self.simple_cps_seg.pack(side="left", fill="x", expand=True, padx=(0, 6))
-
-        self.simple_cps_entry = self._make_entry(
-            self.simple_speed_row.content, allow_float, width=54, on_commit=self._commit_simple_cps
-        )
-        self.simple_cps_entry.pack(side="left")
-
-        # Mouse Button row (Left / Right)
-        self.simple_btn_row = FormRow(self.simple_card.body, typo, label="Button")
-        self.simple_button_seg = Segmented(
-            self.simple_btn_row.content,
-            typo,
-            options={"left": "Left Click", "right": "Right Click"},
-            command=self._on_simple_button_changed,
-        )
-        self.simple_button_seg.pack(side="left", fill="x", expand=True)
-
-        # Repeat row (Until Stopped / Fixed Clicks)
-        self.simple_repeat_row = FormRow(self.simple_card.body, typo, label="Repeat", pady=(0, 0))
-        self.simple_repeat_seg = Segmented(
-            self.simple_repeat_row.content,
-            typo,
-            options={"infinite": "Until Stopped", "fixed": "Fixed Count"},
-            command=self._on_simple_repeat_changed,
-        )
-        self.simple_repeat_seg.pack(side="left", fill="x", expand=True, padx=(0, 6))
-
-        self.simple_repeat_entry = self._make_entry(
-            self.simple_repeat_row.content, allow_uint, width=64, on_commit=self._commit_simple_repeat
-        )
-        self.simple_repeat_entry.pack(side="left")
-
-        # 2b. Telemetry & Profile Bar (Pro Mode)
+        # 2. Telemetry & Profile Bar
         telemetry_card = Card(self, typo)
         telemetry_card.pack(fill="x", padx=pad, pady=(0, 8))
         self._telemetry_card = telemetry_card
@@ -458,7 +430,7 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.unit_seg.pack(side="left", fill="x", expand=True)
 
-        self.speed_hint = caption(speed_card.body, typo, text="= 10.0 CPS", mono=True)
+        self.speed_hint = caption(speed_card.body, typo, text="Effective rate: ~100 CPS   (min 1 ms)", mono=True)
         self.speed_hint.pack(fill="x", padx=(FormRow.LABEL_WIDTH, 0), pady=(0, 6))
 
         self.repeat_row = FormRow(speed_card.body, typo, label="Repeat", pady=(0, 0))
@@ -771,16 +743,6 @@ class ClickForgeWindow(ctk.CTk):
             self._last_valid_speed = clean
         self.speed_entry.set_text(fmt_number(clean))
         self._update_speed_hint()
-        equiv_cps = round(from_interval_ms(to_interval_ms(clean, self._speed_unit), "cps"), 1)
-        if abs(equiv_cps - 5.0) < 0.1:
-            self.simple_cps_seg.set_key("5")
-        elif abs(equiv_cps - 10.0) < 0.1:
-            self.simple_cps_seg.set_key("10")
-        elif abs(equiv_cps - 20.0) < 0.1:
-            self.simple_cps_seg.set_key("20")
-        else:
-            self.simple_cps_seg.set_key("custom")
-        self.simple_cps_entry.set_text(fmt_number(equiv_cps))
         if not self._loading_ui:
             self._mark_custom_and_save()
         return clean
@@ -792,7 +754,6 @@ class ClickForgeWindow(ctk.CTk):
             val = max(1, int(self._config.get("settings").get("repeat_count", 10)))
         val = min(val, 10_000_000)
         self.repeat_count_entry.set_text(str(val))
-        self.simple_repeat_entry.set_text(str(val))
         if not self._loading_ui:
             self._mark_custom_and_save()
         return val
@@ -852,15 +813,11 @@ class ClickForgeWindow(ctk.CTk):
         running = self._engine.is_active
         editable = not running
 
-        # Simple mode controls
-        self.mode_seg.set_enabled(editable)
-        self.simple_cps_seg.set_enabled(editable)
-        is_custom_cps = editable and (self.simple_cps_seg.get_key() == "custom")
-        self.simple_cps_entry.set_enabled(is_custom_cps)
-        self.simple_button_seg.set_enabled(editable)
-        self.simple_repeat_seg.set_enabled(editable)
-        simple_fixed_rep = editable and (self.simple_repeat_seg.get_key() == "fixed")
-        self.simple_repeat_entry.set_enabled(simple_fixed_rep)
+        # Top header setup button (if visible on Windows portable)
+        if self.setup_btn is not None:
+            self.setup_btn.configure(
+                state="normal" if (editable and not self._setup_busy) else "disabled"
+            )
 
         # Top preset & speed controls
         self.preset_seg.set_enabled(editable)
@@ -948,23 +905,12 @@ class ClickForgeWindow(ctk.CTk):
         self._last_valid_speed = converted
         self.speed_entry.set_text(fmt_number(converted))
         self._update_speed_hint()
-        equiv_cps = round(from_interval_ms(ms, "cps"), 1)
-        if abs(equiv_cps - 5.0) < 0.1:
-            self.simple_cps_seg.set_key("5")
-        elif abs(equiv_cps - 10.0) < 0.1:
-            self.simple_cps_seg.set_key("10")
-        elif abs(equiv_cps - 20.0) < 0.1:
-            self.simple_cps_seg.set_key("20")
-        else:
-            self.simple_cps_seg.set_key("custom")
-        self.simple_cps_entry.set_text(fmt_number(equiv_cps))
         if not self._loading_ui:
             self._mark_custom_and_save()
 
     def _on_repeat_changed(self, mode: str) -> None:
         if self.repeat_seg.get_key() != mode:
             self.repeat_seg.set_key(mode)
-        self.simple_repeat_seg.set_key(mode)
         self._refresh_interactive_states()
         if not self._loading_ui:
             self._mark_custom_and_save()
@@ -1074,107 +1020,6 @@ class ClickForgeWindow(ctk.CTk):
         if self._sound_cue:
             play_cue("start", True)
 
-    def _on_ui_mode_changed(self, mode: str) -> None:
-        if self._engine.is_active or mode == self._ui_mode:
-            return
-        self._ui_mode = mode
-        self._config.set("ui_mode", mode)
-        self._config.save()
-        self._apply_ui_mode(mode)
-
-    def _apply_ui_mode(self, mode: str) -> None:
-        pad = t.PAD
-        if mode == "simple":
-            self.telemetry_card.pack_forget()
-            self.speed_card.pack_forget()
-            self.target_card.pack_forget()
-            self.human_card.pack_forget()
-            self.trigger_lbl.pack_forget()
-            self.trigger_seg.pack_forget()
-            self.hotkey_lbl.pack_forget()
-            self.hotkey_btn.pack_forget()
-            self.hotkey_lbl.pack(side="left", padx=(0, 8))
-            self.hotkey_btn.pack(side="right", fill="x", expand=True)
-            self.simple_card.pack(fill="x", padx=pad, pady=(0, 8), before=self.footer)
-            self.footer_caption.configure(
-                text="Press hotkey or click Start   •   Panic stop: Esc"
-            )
-        else:
-            self.simple_card.pack_forget()
-            self.telemetry_card.pack(fill="x", padx=pad, pady=(0, 8), before=self.footer)
-            self.speed_card.pack(fill="x", padx=pad, pady=(0, 8), before=self.footer)
-            self.target_card.pack(fill="x", padx=pad, pady=(0, 8), before=self.footer)
-            self.human_card.pack(fill="x", padx=pad, pady=(0, 8), before=self.footer)
-            self.hotkey_lbl.pack_forget()
-            self.hotkey_btn.pack_forget()
-            self.trigger_lbl.pack(side="left")
-            self.trigger_seg.pack(side="left", padx=(0, 8))
-            self.hotkey_lbl.pack(side="left", padx=(4, 6))
-            self.hotkey_btn.pack(side="right", fill="x", expand=True)
-            self.footer_caption.configure(
-                text="Panic stop: Esc or move pointer to top-left corner (0, 0)   •   Supports Mouse4 / Mouse5"
-            )
-        self.mode_seg.set_key(mode)
-        self._fit_to_content()
-
-    def _on_simple_cps_selected(self, key: str) -> None:
-        if self._loading_ui or self._engine.is_active:
-            return
-        if key in ("5", "10", "20"):
-            val = float(key)
-            self._speed_unit = "cps"
-            self.unit_seg.set_key("cps")
-            self._last_valid_speed = val
-            self.speed_entry.set_text(fmt_number(val))
-            self.simple_cps_entry.set_text(fmt_number(val))
-            self.simple_cps_entry.set_enabled(False)
-            self._update_speed_hint()
-            self._mark_custom_and_save()
-        elif key == "custom":
-            self.simple_cps_entry.set_enabled(True)
-            self.simple_cps_entry.focus_set()
-
-    def _commit_simple_cps(self) -> float:
-        clean = sanitize_speed(self.simple_cps_entry.get_text(), "cps")
-        if clean is None:
-            self.simple_cps_entry.flash_error()
-            clean = self._last_valid_speed
-        else:
-            self._last_valid_speed = clean
-        self.simple_cps_entry.set_text(fmt_number(clean))
-        self._speed_unit = "cps"
-        self.unit_seg.set_key("cps")
-        self.speed_entry.set_text(fmt_number(clean))
-        self._update_speed_hint()
-        if not self._loading_ui:
-            self._mark_custom_and_save()
-        return clean
-
-    def _on_simple_button_changed(self, button: str) -> None:
-        if self._loading_ui or self._engine.is_active:
-            return
-        self.button_seg.set_key(button)
-        self._mark_custom_and_save()
-
-    def _on_simple_repeat_changed(self, mode: str) -> None:
-        if self._loading_ui or self._engine.is_active:
-            return
-        self.repeat_seg.set_key(mode)
-        self._refresh_interactive_states()
-        self._mark_custom_and_save()
-
-    def _commit_simple_repeat(self) -> int:
-        val = parse_int(self.simple_repeat_entry.get_text())
-        if val is None or val < 1:
-            self.simple_repeat_entry.flash_error()
-            val = max(1, int(self._config.get("settings").get("repeat_count", 10)))
-        val = min(val, 10_000_000)
-        self.simple_repeat_entry.set_text(str(val))
-        self.repeat_count_entry.set_text(str(val))
-        if not self._loading_ui:
-            self._mark_custom_and_save()
-        return val
-
     def _reset_counters(self) -> None:
         self._engine.reset_counter()
         self._shown_cps = (0, False)
@@ -1265,6 +1110,7 @@ class ClickForgeWindow(ctk.CTk):
         ):
             return
         self._close_update_dialog()
+        self._close_setup_dialog()
         if self._focused_entries > 0:
             self.focus_set()
         snapshot = self._build_settings_snapshot()
@@ -1336,6 +1182,12 @@ class ClickForgeWindow(ctk.CTk):
             self._on_update_ready(payload)
         elif kind == "update_error":
             self._on_update_error(payload)
+        elif kind == "setup_progress":
+            self._on_update_progress(*payload)
+        elif kind == "setup_done":
+            self._on_setup_done(payload)
+        elif kind == "setup_error":
+            self._on_setup_error(payload)
 
     # ── Config Persistence & Presets ─────────────────────────────────
 
@@ -1344,7 +1196,7 @@ class ClickForgeWindow(ctk.CTk):
         try:
             self._speed_unit = data.get("speed_unit", "ms")
             self.unit_seg.set_key(self._speed_unit)
-            val = sanitize_speed(data.get("speed_value", 100.0), self._speed_unit) or 100.0
+            val = sanitize_speed(data.get("speed_value", 10.0), self._speed_unit) or 10.0
             self._last_valid_speed = val
             self.speed_entry.set_text(fmt_number(val))
             self._update_speed_hint()
@@ -1364,28 +1216,6 @@ class ClickForgeWindow(ctk.CTk):
             self.hold_min_entry.set_text(fmt_number(float(data.get("hold_min_ms", 18.0))))
             self.hold_max_entry.set_text(fmt_number(float(data.get("hold_max_ms", 42.0))))
             self.pos_jitter_entry.set_text(str(int(data.get("pos_jitter_px", 2))))
-
-            # Sync Simple Mode widgets
-            btn = data.get("button", "left")
-            self.simple_button_seg.set_key(btn if btn in ("left", "right") else "left")
-            rep = data.get("repeat_mode", "infinite")
-            self.simple_repeat_seg.set_key(rep)
-            self.simple_repeat_entry.set_text(str(data.get("repeat_count", 10)))
-
-            equiv_cps = round(from_interval_ms(to_interval_ms(val, self._speed_unit), "cps"), 1)
-            if abs(equiv_cps - 5.0) < 0.1:
-                self.simple_cps_seg.set_key("5")
-                self.simple_cps_entry.set_enabled(False)
-            elif abs(equiv_cps - 10.0) < 0.1:
-                self.simple_cps_seg.set_key("10")
-                self.simple_cps_entry.set_enabled(False)
-            elif abs(equiv_cps - 20.0) < 0.1:
-                self.simple_cps_seg.set_key("20")
-                self.simple_cps_entry.set_enabled(False)
-            else:
-                self.simple_cps_seg.set_key("custom")
-                self.simple_cps_entry.set_enabled(True)
-            self.simple_cps_entry.set_text(fmt_number(equiv_cps))
         finally:
             self._loading_ui = False
         self._refresh_interactive_states()
@@ -1393,9 +1223,6 @@ class ClickForgeWindow(ctk.CTk):
     def _load_from_config(self) -> None:
         self._loading_ui = True
         try:
-            self._ui_mode = self._config.get("ui_mode")
-            if self._ui_mode not in ("simple", "pro"):
-                self._ui_mode = "simple"
             self._sound_cue = bool(self._config.get("sound_cue"))
             self._current_profile = self._config.get("profile")
             if self._current_profile not in PROFILE_NAMES:
@@ -1407,7 +1234,6 @@ class ClickForgeWindow(ctk.CTk):
         finally:
             self._loading_ui = False
         self._apply_profile_dict(self._config.get("settings"))
-        self._apply_ui_mode(self._ui_mode)
 
     def _collect_profile_dict(self) -> Dict[str, Any]:
         speed_val = sanitize_speed(self.speed_entry.get_text(), self._speed_unit)
@@ -1461,13 +1287,189 @@ class ClickForgeWindow(ctk.CTk):
         self._config.set("settings", profile)
         if self._current_profile == "Custom":
             self._config.set("custom", profile)
-        self._config.set("ui_mode", self._ui_mode)
         self._config.set("sound_cue", self._sound_cue)
         self._config.set("hotkey", self._hotkeys.binding)
         self._config.set("trigger_mode", self._trigger_mode)
         self._config.set("always_on_top", self._always_on_top)
         self._config.set("theme", self._theme_mode)
         self._config.save()
+
+    # ── Windows Programs Setup ───────────────────────────────────────
+
+    def _close_setup_dialog(self) -> None:
+        if self._setup_dialog is not None:
+            self._setup_dialog.close()
+            self._setup_dialog = None
+
+    def _open_windows_setup(self) -> None:
+        if self._closing or self._setup_busy or self._update_busy or self._engine.is_active:
+            return
+        self._close_setup_dialog()
+
+        local_installer = installer.find_local_installer()
+        portable_ok = installer.can_install_portable()
+        display_dir = r"%LOCALAPPDATA%\Programs\ClickForge"
+
+        if local_installer:
+            headline = "Run Windows Installer"
+            subhead = "Install ClickForge to Windows Programs with Start Menu shortcuts and clean uninstall support."
+            details = f"Setup wizard: {os.path.basename(local_installer)}"
+            primary = "Run Setup"
+            show_desk = False
+        elif portable_ok:
+            headline = "Install ClickForge to Programs"
+            subhead = "Adds ClickForge to your Windows Start Menu and Installed Apps with automatic updates enabled."
+            details = f"Install location: {display_dir}"
+            primary = "Install Now"
+            show_desk = True
+        else:
+            headline = "Install ClickForge for Windows"
+            subhead = "Download and run the official ClickForge-Setup.exe installer to add ClickForge to Windows Programs."
+            details = f"Installs per-user to {display_dir} (no admin prompt required)."
+            primary = "Download Setup"
+            show_desk = False
+
+        ico_path = resource_path("assets", "icon.ico")
+        self._setup_dialog = SetupPromptDialog(
+            self,
+            self._typo,
+            headline=headline,
+            subhead=subhead,
+            details=details,
+            primary_label=primary,
+            show_desktop_option=show_desk,
+            on_confirm=lambda desk: self._run_windows_setup(desk, local_installer, portable_ok),
+            logo_image=self._dialog_logo,
+            ico_path=ico_path,
+        )
+
+    def _run_windows_setup(
+        self,
+        create_desktop_shortcut: bool,
+        local_installer: Optional[str],
+        portable_ok: bool,
+    ) -> None:
+        if self._setup_busy:
+            return
+        if local_installer:
+            try:
+                installer.launch_exe(local_installer)
+                self._show_banner(
+                    title="Launched ClickForge Setup",
+                    detail="Follow the Windows installer wizard to complete setup.",
+                    actions=(("Dismiss", self._hide_banner, False),),
+                    tone="accent",
+                    auto_hide_ms=5000,
+                )
+            except Exception as exc:
+                self._on_setup_error(str(exc))
+            return
+
+        self._setup_busy = True
+        self._refresh_interactive_states()
+
+        if portable_ok:
+            self._show_banner(
+                title="Installing ClickForge to Programs...",
+                detail="Creating Start Menu & Installed Apps entries",
+                progress=0.5,
+                tone="accent",
+            )
+
+            def worker_portable() -> None:
+                try:
+                    exe_path = installer.install_portable_bundle(
+                        create_desktop_shortcut=create_desktop_shortcut
+                    )
+                    self._events.put(("setup_done", ("portable", exe_path)))
+                except Exception as exc:
+                    self._events.put(("setup_error", str(exc)))
+
+            threading.Thread(
+                target=worker_portable, name="ClickForge-Setup", daemon=True
+            ).start()
+            return
+
+        cancel = threading.Event()
+        self._update_cancel = cancel
+        self._show_banner(
+            title="Downloading ClickForge-Setup.exe...",
+            detail="Connecting to GitHub Releases...",
+            actions=(("Cancel", self._cancel_update, False),),
+            progress=0.0,
+            tone="accent",
+        )
+
+        def worker_download() -> None:
+            last_emit = 0.0
+
+            def on_progress(received: int, total: int) -> None:
+                nonlocal last_emit
+                now = time.perf_counter()
+                if now - last_emit >= 0.05 or (total and received >= total):
+                    last_emit = now
+                    self._events.put(("setup_progress", (received, total)))
+
+            try:
+                path = installer.download_and_launch_setup(
+                    progress=on_progress, cancel=cancel
+                )
+                self._events.put(("setup_done", ("wizard", path)))
+            except Exception as exc:
+                self._events.put(("setup_error", str(exc)))
+
+        threading.Thread(
+            target=worker_download, name="ClickForge-SetupDownload", daemon=True
+        ).start()
+
+    def _on_setup_done(self, payload: Tuple[str, str]) -> None:
+        kind, exe_path = payload
+        self._setup_busy = False
+        self._update_cancel = None
+        self._refresh_interactive_states()
+        if kind == "portable":
+            self._show_banner(
+                title="ClickForge installed to Windows Programs",
+                detail="Available in Start Menu and Installed Apps.",
+                actions=(
+                    ("Launch Installed", lambda: self._launch_installed_copy(exe_path), True),
+                    ("Dismiss", self._hide_banner, False),
+                ),
+                tone="accent",
+            )
+        else:
+            self._show_banner(
+                title="Setup wizard started",
+                detail="Follow ClickForge Setup to finish installing to Programs.",
+                actions=(("Dismiss", self._hide_banner, False),),
+                tone="accent",
+                auto_hide_ms=5000,
+            )
+
+    def _launch_installed_copy(self, exe_path: str) -> None:
+        try:
+            installer.launch_exe(exe_path)
+        except Exception as exc:
+            self._on_setup_error(str(exc))
+            return
+        self._on_close()
+
+    def _on_setup_error(self, message: str) -> None:
+        self._setup_busy = False
+        self._update_cancel = None
+        self._refresh_interactive_states()
+        if message == "Download cancelled.":
+            self._hide_banner()
+            return
+        self._show_banner(
+            title="Setup could not complete",
+            detail=message,
+            actions=(
+                ("Releases", self._open_release_page, False),
+                ("Dismiss", self._hide_banner, False),
+            ),
+            tone="danger",
+        )
 
     # ── Auto-Updater ─────────────────────────────────────────────────
 
@@ -1498,7 +1500,7 @@ class ClickForgeWindow(ctk.CTk):
         )
         if not self.update_banner.winfo_manager():
             self.update_banner.pack(
-                fill="x", padx=t.PAD, pady=(0, 8), after=self.mode_bar
+                fill="x", padx=t.PAD, pady=(0, 8), after=self.hdr
             )
         self._fit_to_content()
         if auto_hide_ms > 0:
@@ -1538,6 +1540,7 @@ class ClickForgeWindow(ctk.CTk):
 
         self._hide_banner()
         self._close_update_dialog()
+        self._close_setup_dialog()
 
         can_self, _reason = updater.can_self_update()
         primary_label = "Update Now" if can_self else "Download Update"
@@ -1644,7 +1647,7 @@ class ClickForgeWindow(ctk.CTk):
         self._hide_banner()
 
     def _start_update_install(self) -> None:
-        if self._update_busy or self._update_release is None:
+        if self._update_busy or self._setup_busy or self._update_release is None:
             return
 
         release = self._update_release
@@ -1795,6 +1798,7 @@ class ClickForgeWindow(ctk.CTk):
         self._startup_warn_job = None
         self._startup_update_job = None
         self._close_update_dialog()
+        self._close_setup_dialog()
         if self._update_cancel is not None:
             self._update_cancel.set()
         try:

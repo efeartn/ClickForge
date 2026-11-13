@@ -2,6 +2,22 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.2.0] - 2026-11-13 — "Velocity"
+
+### Changed
+- **Unified Single Interface (Pro Mode Only):** Removed the Simple vs. Pro mode switcher so every user immediately gets the complete, uncluttered ClickForge workspace (Live CPS telemetry, multi-unit speed control, Target & Fixed XY picker, Humanizer, Trigger mode, and sound toggle) without extra clicks.
+- **Snappier Out-of-the-Box Defaults:** Changed the factory default interval to **`10 ms` (`~100 CPS`)** and explicitly enforced **`Follow Cursor`** on the `Default` preset (`Fast` preset raised to `500 CPS`).
+- **Faster First-Launch Paint & Slimmer Bundle:** Withdrew window construction until layout settles, cached resized window/logo bitmaps instead of decoding icons multiple times during startup, and excluded dev-only modules from the PyInstaller spec while keeping full `1,000 CPS` timer precision.
+
+### Added
+- **Windows Setup Installer (`ClickForge-Setup.exe`) & In-App `Setup` Button:** Added an Inno Setup 6 script (`installer/ClickForge.iss`) and CI packaging so ClickForge can be installed cleanly per-user into `%LOCALAPPDATA%\Programs\ClickForge` (registered in Start Menu and Windows Installed Apps / Programs without UAC prompts, with automatic updates still enabled). Portable Windows builds also include a header **Setup** button (`clickforge/core/installer.py`) to install directly into Programs or launch `ClickForge-Setup.exe`.
+
+### Fixed
+- **`F6` / `VK117` & `Esc` Hotkey Bug on Windows:** Fixed `TriggerListener._key_name()` calling `pynput`'s `canonical(key)` before checking `isinstance(key, keyboard.Key)`, which stripped `Key.f6` -> `KeyCode(vk=117)` and `Key.esc` -> `KeyCode(vk=27)`. Added `normalize_binding()` and a virtual-key lookup table so `F6` and `Esc` work immediately out of the box, recording `F6` saves `"f6"` cleanly, and legacy `"vk117"` configs auto-heal to `"f6"`.
+- **Legacy Config Safety Migration (`Schema 5`):** Automatically upgrades `"vk117"` bindings, heals accidental `(0, 0)` Fixed XY traps from removed Simple Mode back to `Follow Cursor`, and refreshes untouched `Default` speeds to `10 ms`.
+
+---
+
 ## [3.1.0] - 2026-11-13 — "Beacon"
 
 ### Added

@@ -57,10 +57,23 @@ jobs:
       - name: Build executable with PyInstaller
         run: pyinstaller clickforge.spec --clean -y
 
-      - name: Prepare Windows Artifact
+      - name: Prepare Windows Artifact & Installer
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           Compress-Archive -Path dist/ClickForge/* -DestinationPath ${{ matrix.asset_name }}
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($cmd) { $iscc = $cmd.Source }
+          }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          $ver = python -c "import clickforge; print(clickforge.__version__)"
+          & $iscc "/DAppVersion=$ver" "installer\ClickForge.iss"
+          Copy-Item "dist\ClickForge-Setup.exe" "ClickForge-Setup.exe" -Force
 
       - name: Prepare macOS Artifact
         if: runner.os == 'macOS'
@@ -79,6 +92,13 @@ jobs:
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.asset_name }}
+
+      - name: Upload Windows Installer Artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClickForge-Setup
+          path: ClickForge-Setup.exe
 
   release:
     name: Create GitHub Release
@@ -102,6 +122,7 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/ClickForge-Windows/ClickForge-Windows.zip
+            artifacts/ClickForge-Setup/ClickForge-Setup.exe
             artifacts/ClickForge-macOS/ClickForge-macOS.zip
             artifacts/ClickForge-Linux/ClickForge-Linux.zip
         env:

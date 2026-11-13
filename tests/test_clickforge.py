@@ -22,7 +22,7 @@ import unittest
 from unittest.mock import patch
 
 import clickforge
-from clickforge.core import updater
+from clickforge.core import installer, updater
 from clickforge.core.clicker import ClickEngine, ClickSettings
 from clickforge.core.config import (
     DEFAULTS,
@@ -33,9 +33,11 @@ from clickforge.core.config import (
     normalize_profile,
 )
 from clickforge.core.hotkeys import (
+    TriggerListener,
     conflicts_with_numeric_entry,
     display_name,
     is_mouse_binding,
+    normalize_binding,
 )
 from clickforge.core.input_backend import InputBackend, create_backend
 from clickforge.core.sound import play_cue
@@ -84,8 +86,8 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.1.0")
-        self.assertEqual(clickforge.__codename__, "Beacon")
+        self.assertEqual(clickforge.__version__, "3.2.0")
+        self.assertEqual(clickforge.__codename__, "Velocity")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
 
@@ -105,23 +107,27 @@ class TestConfig(unittest.TestCase):
     def test_schema_and_defaults(self):
         cfg = Config(path=self.config_path)
         self.assertEqual(cfg.get("schema"), SCHEMA_VERSION)
-        self.assertIn(cfg.get("ui_mode"), ("simple", "pro"))
-        self.assertEqual(cfg.get("ui_mode"), "simple")
         self.assertFalse(cfg.get("sound_cue"))
         self.assertEqual(cfg.get("hotkey"), "f6")
         self.assertEqual(cfg.get("trigger_mode"), "toggle")
+        settings = cfg.get("settings")
+        self.assertEqual(settings["position_mode"], "cursor")
+        self.assertEqual(settings["speed_value"], 10.0)
+        self.assertEqual(settings["speed_unit"], "ms")
 
     def test_save_and_load(self):
         cfg = Config(path=self.config_path)
-        cfg.set("ui_mode", "pro")
         cfg.set("sound_cue", True)
         cfg.set("hotkey", "f8")
         cfg.save()
 
         cfg2 = Config(path=self.config_path)
-        self.assertEqual(cfg2.get("ui_mode"), "pro")
         self.assertTrue(cfg2.get("sound_cue"))
         self.assertEqual(cfg2.get("hotkey"), "f8")
+
+        # Legacy vk117 stored as hotkey heals to f6 on load
+        cfg2.set("hotkey", "vk117")
+        self.assertEqual(cfg2.get("hotkey"), "f6")
 
     def test_profile_export_import(self):
         cfg = Config(path=self.config_path)
@@ -170,12 +176,36 @@ class TestConfig(unittest.TestCase):
             "appearance_mode": "Dark",
         }
         migrated = Config._migrate(legacy)
-        self.assertEqual(migrated["ui_mode"], "simple")
+        self.assertNotIn("ui_mode", migrated)
         self.assertEqual(migrated["settings"]["speed_value"], 200.0)
         self.assertEqual(migrated["settings"]["repeat_mode"], "fixed")
         self.assertEqual(migrated["settings"]["repeat_count"], 25)
         self.assertEqual(migrated["settings"]["button"], "right")
+        self.assertEqual(migrated["settings"]["position_mode"], "cursor")
         self.assertEqual(migrated["hotkey"], "f7")
+
+        # Schema 4 config with vk117 hotkey and accidental (0,0) fixed XY heals cleanly
+        schema4 = {
+            "schema": 4,
+            "ui_mode": "simple",
+            "profile": "Default",
+            "hotkey": "vk117",
+            "settings": {
+                **PROFILE_DEFAULTS,
+                "speed_value": 100.0,
+                "position_mode": "fixed",
+                "fixed_x": 0,
+                "fixed_y": 0,
+            },
+            "custom": {**PROFILE_DEFAULTS, "position_mode": "fixed", "fixed_x": 120, "fixed_y": 340},
+        }
+        migrated4 = Config._migrate(schema4)
+        self.assertNotIn("ui_mode", migrated4)
+        self.assertEqual(migrated4["hotkey"], "f6")
+        self.assertEqual(migrated4["settings"]["position_mode"], "cursor")
+        self.assertEqual(migrated4["settings"]["speed_value"], 10.0)
+        # Deliberate non-(0,0) coordinates are preserved
+        self.assertEqual(migrated4["custom"]["position_mode"], "fixed")
 
 
 class TestValidation(unittest.TestCase):
@@ -268,8 +298,15 @@ class TestClickSettingsAndEngine(unittest.TestCase):
 
 
 class TestHotkeys(unittest.TestCase):
+    def test_normalize_binding(self):
+        self.assertEqual(normalize_binding("vk117"), "f6")
+        self.assertEqual(normalize_binding("VK27"), "esc")
+        self.assertEqual(normalize_binding("F6"), "f6")
+        self.assertEqual(normalize_binding("vk96"), "vk96")
+
     def test_display_names(self):
         self.assertEqual(display_name("f6"), "F6")
+        self.assertEqual(display_name("vk117"), "F6")
         self.assertEqual(display_name("f11"), "F11")
         self.assertEqual(display_name("space"), "Space")
         self.assertEqual(display_name("mouse:x1"), "Mouse4")
@@ -277,6 +314,45 @@ class TestHotkeys(unittest.TestCase):
         self.assertEqual(display_name("vk96"), "Num 0")
         self.assertEqual(display_name("vk105"), "Num 9")
         self.assertEqual(display_name("vk107"), "Num +")
+
+    def test_trigger_listener_f6_and_esc_on_windows_canonical(self):
+        from pynput import keyboard
+
+        pressed, released, panicked, recorded = [], [], [], []
+        listener = TriggerListener(
+            binding="vk117",
+            on_press=lambda: pressed.append(True),
+            on_release=lambda: released.append(True),
+            on_panic=lambda: panicked.append(True),
+            on_recorded=lambda k: recorded.append(k),
+        )
+        self.assertEqual(listener.binding, "f6")
+
+        # Simulate Windows pynput Listener.canonical() stripping Key.f6 -> KeyCode(vk=117)
+        class FakeKb:
+            @staticmethod
+            def canonical(k):
+                if k == keyboard.Key.f6:
+                    return keyboard.KeyCode(vk=117)
+                if k == keyboard.Key.esc:
+                    return keyboard.KeyCode(vk=27)
+                return k
+
+        listener._kb = FakeKb()
+        listener._key_press(keyboard.Key.f6)
+        listener._key_release(keyboard.Key.f6)
+        listener._key_press(keyboard.KeyCode(vk=117))
+        listener._key_release(keyboard.KeyCode(vk=117))
+        self.assertEqual(len(pressed), 2)
+        self.assertEqual(len(released), 2)
+
+        listener._key_press(keyboard.Key.esc)
+        self.assertEqual(len(panicked), 1)
+
+        listener.begin_recording()
+        listener._key_press(keyboard.Key.f6)
+        self.assertEqual(recorded, ["f6"])
+        self.assertEqual(listener.binding, "f6")
 
     def test_numeric_conflict(self):
         # Conflicting numeric characters and editing keys
@@ -440,6 +516,74 @@ class TestStartupUpdatePrompt(unittest.TestCase):
                 self.assertTrue(bool(app.update_banner.winfo_manager()))
         finally:
             app._on_close()
+
+    def test_unified_pro_mode_defaults_and_high_cps(self):
+        app = self._make_window()
+        try:
+            self.assertFalse(hasattr(app, "mode_bar"))
+            self.assertFalse(hasattr(app, "simple_card"))
+            self.assertEqual(app.pos_seg.get_key(), "cursor")
+            self.assertEqual(app.speed_entry.get_text(), "10")
+            self.assertEqual(app.unit_seg.get_key(), "ms")
+            self.assertEqual(app._hotkeys.binding, "f6")
+            self.assertEqual(app.hotkey_btn.cget("text"), "[ F6 ]")
+        finally:
+            app._on_close()
+
+        # Verify high-CPS engine maintains crisp throughput cleanly
+        backend = DummyBackend()
+        eng = ClickEngine(backend=backend)
+        self.assertTrue(eng.start(ClickSettings(interval_ms=2.0, repeat_count=0, corner_failsafe=False)))
+        time.sleep(0.18)
+        eng.stop(wait=True)
+        self.assertGreaterEqual(eng.click_count, 30)
+
+
+class TestInstaller(unittest.TestCase):
+    def test_default_install_dir_and_detection(self):
+        default_dir = installer.default_install_dir()
+        self.assertTrue(default_dir.endswith(os.path.join("Programs", "ClickForge")))
+        if installer.IS_WINDOWS:
+            inside_exe = os.path.join(default_dir, "ClickForge.exe")
+            outside_exe = os.path.join("C:\\Downloads\\ClickForge", "ClickForge.exe")
+            self.assertTrue(installer.is_installed_in_programs(exe_path=inside_exe, frozen=True))
+            self.assertFalse(installer.is_installed_in_programs(exe_path=outside_exe, frozen=True))
+            self.assertFalse(installer.is_installed_in_programs(exe_path=inside_exe, frozen=False))
+
+    def test_setup_asset_does_not_affect_updater_zip(self):
+        rel = updater.ReleaseInfo(
+            tag="v3.2.0",
+            version=(3, 2, 0),
+            title="v3.2.0",
+            page_url="https://github.com/efeartn/ClickForge/releases/tag/v3.2.0",
+            notes="",
+            assets=(
+                updater.Asset(name="ClickForge-Setup.exe", url="https://example.com/setup.exe", size=123),
+                updater.Asset(name="ClickForge-Windows.zip", url="https://example.com/win.zip", size=456),
+            ),
+        )
+        setup_asset = installer.select_setup_asset(rel)
+        zip_asset = rel.asset_for_platform("windows")
+        self.assertIsNotNone(setup_asset)
+        self.assertEqual(setup_asset.name, "ClickForge-Setup.exe")
+        self.assertIsNotNone(zip_asset)
+        self.assertEqual(zip_asset.name, "ClickForge-Windows.zip")
+
+    def test_uninstall_script_and_inno_spec(self):
+        script = installer.build_uninstall_script(
+            r"C:\Users\Test\AppData\Local\Programs\ClickForge",
+            r"C:\Users\Test\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\ClickForge",
+            r"C:\Users\Test\Desktop\ClickForge.lnk",
+        )
+        self.assertIn(installer.UNINSTALL_REG_PATH, script)
+        self.assertIn("taskkill /F /IM ClickForge.exe", script)
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        iss_path = os.path.join(repo_root, "installer", "ClickForge.iss")
+        self.assertTrue(os.path.isfile(iss_path))
+        with open(iss_path, "r", encoding="utf-8") as f:
+            iss = f.read()
+        self.assertIn("{localappdata}\\Programs\\{#AppName}", iss)
+        self.assertIn("PrivilegesRequired=lowest", iss)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 import threading
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 try:
     from pynput import keyboard, mouse
@@ -22,6 +22,57 @@ except Exception:
     keyboard, mouse = None, None
 
 PANIC_KEY = "esc"
+
+_VK_RE = re.compile(r"vk(\d+)")
+
+# Windows virtual-key codes for non-character keys (populated statically so
+# normalization works identically across platforms and headless tests).
+_VK_TO_NAME: Dict[int, str] = {
+    8: "backspace",
+    9: "tab",
+    13: "enter",
+    17: "ctrl",
+    18: "alt",
+    19: "pause",
+    20: "caps_lock",
+    27: "esc",
+    32: "space",
+    33: "page_up",
+    34: "page_down",
+    35: "end",
+    36: "home",
+    37: "left",
+    38: "up",
+    39: "right",
+    40: "down",
+    44: "print_screen",
+    45: "insert",
+    46: "delete",
+    91: "cmd",
+    92: "cmd_r",
+    93: "menu",
+    **{111 + i: f"f{i}" for i in range(1, 25)},
+    144: "num_lock",
+    145: "scroll_lock",
+    160: "shift",
+    161: "shift_r",
+    162: "ctrl_l",
+    163: "ctrl_r",
+    164: "alt_l",
+    165: "alt_r",
+    173: "media_volume_mute",
+    174: "media_volume_down",
+    175: "media_volume_up",
+    176: "media_next",
+    177: "media_previous",
+    178: "media_stop",
+    179: "media_play_pause",
+}
+if keyboard is not None:
+    for _k in keyboard.Key:
+        _vk = getattr(_k.value, "vk", None)
+        if _vk is not None:
+            _VK_TO_NAME.setdefault(_vk, _k.name)
 
 _MOUSE_NAMES = {
     "x1": "mouse:x1",
@@ -55,8 +106,22 @@ _NUMERIC_CONFLICT_KEYS = frozenset(
 )
 
 
+def normalize_binding(binding: Any, default: str = "f6") -> str:
+    """Canonicalize a hotkey string, turning named VK codes like ``vk117`` into ``f6``."""
+    if not isinstance(binding, str):
+        return default
+    cleaned = binding.strip().lower()
+    if not cleaned:
+        return default
+    m = _VK_RE.fullmatch(cleaned)
+    if m is not None:
+        return _VK_TO_NAME.get(int(m.group(1)), cleaned)
+    return cleaned
+
+
 def display_name(binding: str) -> str:
     """Human-readable label for a binding string."""
+    binding = normalize_binding(binding)
     if binding in _DISPLAY:
         return _DISPLAY[binding]
     if re.fullmatch(r"f\d{1,2}", binding):
@@ -72,7 +137,7 @@ def is_mouse_binding(binding: str) -> bool:
 
 def conflicts_with_numeric_entry(binding: str) -> bool:
     """Return True if ``binding`` is a key used while editing numeric fields."""
-    return binding.lower() in _NUMERIC_CONFLICT_KEYS
+    return normalize_binding(binding) in _NUMERIC_CONFLICT_KEYS
 
 
 class TriggerListener:
@@ -90,7 +155,7 @@ class TriggerListener:
         on_panic: Callable[[], None],
         on_recorded: Callable[[Optional[str]], None],
     ) -> None:
-        self._binding = binding
+        self._binding = normalize_binding(binding)
         self._on_press = on_press
         self._on_release = on_release
         self._on_panic = on_panic
@@ -145,7 +210,7 @@ class TriggerListener:
 
     def set_binding(self, binding: str) -> None:
         with self._lock:
-            self._binding = binding
+            self._binding = normalize_binding(binding)
             self._down = False
         self._sync_mouse_listener()
 
@@ -178,6 +243,10 @@ class TriggerListener:
                 self._mouse = None
 
     def _key_name(self, key: Any) -> Optional[str]:
+        # Check Key enum BEFORE canonical(): on Windows, pynput's canonical(Key.f6)
+        # strips Key.f6 down to KeyCode(vk=117), breaking "f6" and "esc" matches.
+        if keyboard is not None and isinstance(key, keyboard.Key):
+            return key.name
         if self._kb is not None and hasattr(self._kb, "canonical"):
             try:
                 key = self._kb.canonical(key)
@@ -186,7 +255,9 @@ class TriggerListener:
         if keyboard is not None and isinstance(key, keyboard.Key):
             return key.name
         if keyboard is not None and isinstance(key, keyboard.KeyCode):
-            if key.char and len(key.char) == 1 and key.char.isprintable():
+            if key.vk is not None and key.vk in _VK_TO_NAME:
+                return _VK_TO_NAME[key.vk]
+            if key.char and len(key.char) == 1 and key.char.isprintable() and key.char != " ":
                 return key.char.lower()
             if key.vk is not None:
                 return f"vk{key.vk}"

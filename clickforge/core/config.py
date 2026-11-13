@@ -15,11 +15,13 @@ from typing import Any, Dict, Optional
 
 from platformdirs import user_config_dir
 
-SCHEMA_VERSION = 4
+from clickforge.core.hotkeys import normalize_binding
+
+SCHEMA_VERSION = 5
 
 #: Fields that make up a profile (what presets control).
 PROFILE_DEFAULTS: Dict[str, Any] = {
-    "speed_value": 100.0,
+    "speed_value": 10.0,
     "speed_unit": "ms",          # ms | sec | min | cps
     "repeat_mode": "infinite",   # infinite | fixed
     "repeat_count": 10,
@@ -38,7 +40,6 @@ PROFILE_DEFAULTS: Dict[str, Any] = {
 #: App-wide settings (not affected by presets).
 DEFAULTS: Dict[str, Any] = {
     "schema": SCHEMA_VERSION,
-    "ui_mode": "simple",         # simple | pro
     "profile": "Default",
     "theme": "System",           # System | Light | Dark
     "always_on_top": False,
@@ -53,7 +54,6 @@ DEFAULTS: Dict[str, Any] = {
 }
 
 _CHOICES = {
-    "ui_mode": ("simple", "pro"),
     "speed_unit": ("ms", "sec", "min", "cps"),
     "repeat_mode": ("infinite", "fixed"),
     "button": ("left", "right", "middle"),
@@ -64,19 +64,19 @@ _CHOICES = {
 }
 
 PROFILE_NAMES = ("Default", "Fast", "Humanized", "Custom")
-UI_MODES = ("simple", "pro")
 
 _MAY_BE_EMPTY = frozenset({"skipped_version"})
 
-# Presets intentionally leave position fields alone so switching profiles
-# never discards a carefully picked coordinate.
+# Presets keep saved coordinates intact unless returning to Default (which
+# resets Follow Cursor so the clicker clicks where the user points).
 PRESETS: Dict[str, Dict[str, Any]] = {
     "Default": {
-        "speed_value": 100.0, "speed_unit": "ms", "repeat_mode": "infinite",
-        "button": "left", "click_type": "single", "humanize": False,
+        "speed_value": 10.0, "speed_unit": "ms", "repeat_mode": "infinite",
+        "button": "left", "click_type": "single", "position_mode": "cursor",
+        "humanize": False,
     },
     "Fast": {
-        "speed_value": 100.0, "speed_unit": "cps", "repeat_mode": "infinite",
+        "speed_value": 500.0, "speed_unit": "cps", "repeat_mode": "infinite",
         "button": "left", "click_type": "single", "humanize": False,
     },
     "Humanized": {
@@ -102,6 +102,8 @@ def _coerce(key: str, value: Any, default: Any) -> Any:
         if isinstance(default, str):
             if not isinstance(value, str):
                 return default
+            if key == "hotkey":
+                return normalize_binding(value, default)
             return value if (value or key in _MAY_BE_EMPTY) else default
     except (TypeError, ValueError):
         return default
@@ -231,18 +233,40 @@ class Config:
     @staticmethod
     def _migrate(old: Dict[str, Any]) -> Dict[str, Any]:
         """Migrate older schemas while preserving structured v2.2+ settings."""
-        # Schema 3 (v2.2–v2.4) already uses structured 'settings' and 'custom' dicts.
+        # Schema 3-4 already use structured 'settings' and 'custom' dicts.
         if isinstance(old.get("settings"), dict):
             migrated = dict(old)
-            if "ui_mode" not in migrated:
-                migrated["ui_mode"] = "simple"
+            migrated.pop("ui_mode", None)
+            if "hotkey" in migrated:
+                migrated["hotkey"] = normalize_binding(migrated["hotkey"])
+            # Heal legacy (0, 0) Fixed XY traps left over from removed Simple Mode,
+            # and refresh untouched v3.x factory "Default" speed (100 ms -> 10 ms).
+            for section in ("settings", "custom"):
+                blk = migrated.get(section)
+                if not isinstance(blk, dict):
+                    continue
+                patched = dict(blk)
+                if (
+                    patched.get("position_mode") == "fixed"
+                    and int(patched.get("fixed_x", 0) or 0) == 0
+                    and int(patched.get("fixed_y", 0) or 0) == 0
+                ):
+                    patched["position_mode"] = "cursor"
+                if (
+                    section == "settings"
+                    and migrated.get("profile", "Default") == "Default"
+                    and patched.get("speed_value") == 100.0
+                    and patched.get("speed_unit", "ms") == "ms"
+                ):
+                    patched["speed_value"] = 10.0
+                migrated[section] = patched
             return migrated
 
         # Legacy flat v2.0/v2.1 config
         settings = dict(PROFILE_DEFAULTS)
         unit = old.get("interval_unit", "ms")
         settings.update({
-            "speed_value": old.get("interval", 100.0),
+            "speed_value": old.get("interval", 10.0),
             "speed_unit": unit if unit in ("ms", "sec") else "ms",
             "repeat_mode": "fixed" if old.get("click_mode") == "fixed_count" else "infinite",
             "repeat_count": old.get("click_count", 10),
@@ -254,8 +278,7 @@ class Config:
             "humanize": bool(old.get("humanize", False)),
         })
         return {
-            "ui_mode": "simple",
-            "hotkey": old.get("hotkey", "f6"),
+            "hotkey": normalize_binding(old.get("hotkey", "f6")),
             "theme": old.get("appearance_mode", "System"),
             "settings": settings,
             "custom": settings,
