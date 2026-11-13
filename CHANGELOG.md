@@ -2,6 +2,12 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.2.1] - 2026-11-14 — "Velocity"
+
+### Fixed
+- **Windows / CustomTkinter Invisible Launch Fix**: Removed premature `self.withdraw()` / `self.deiconify()` calls from `ClickForgeWindow.__init__()` so `CTk.mainloop()` does not leave the main window permanently hidden after setting the Windows title bar (`ClickForge.exe` previously ran in the background with no visible window).
+- **Regression Coverage**: Added a `mainloop()` visibility test verifying the main window reaches `state() == "normal"` and maps cleanly on startup.
+
 ## [3.2.0] - 2026-11-13 — "Velocity"
 
 ### Changed

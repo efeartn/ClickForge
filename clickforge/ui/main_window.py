@@ -94,7 +94,6 @@ class ClickForgeWindow(ctk.CTk):
         ctk.set_default_color_theme("blue")
 
         super().__init__()
-        self.withdraw()
 
         self.title(__app_name__)
         self.resizable(False, False)
@@ -161,7 +160,6 @@ class ClickForgeWindow(ctk.CTk):
         self._load_from_config()
         self._apply_always_on_top()
         self._fit_to_content(center=True)
-        self.deiconify()
 
         # Clicking neutral background defocuses active entry fields
         self.bind_all("<Button-1>", self._on_global_click, add="+")

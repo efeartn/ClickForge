@@ -86,7 +86,7 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.2.0")
+        self.assertEqual(clickforge.__version__, "3.2.1")
         self.assertEqual(clickforge.__codename__, "Velocity")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
@@ -537,6 +537,41 @@ class TestStartupUpdatePrompt(unittest.TestCase):
         time.sleep(0.18)
         eng.stop(wait=True)
         self.assertGreaterEqual(eng.click_count, 30)
+
+    def test_window_becomes_visible_in_mainloop(self):
+        # Regression: CTk leaves the main window permanently withdrawn in mainloop()
+        # if self.withdraw() was called before _window_exists becomes True (e.g. Windows startup).
+        with (
+            patch("clickforge.core.hotkeys.TriggerListener.start"),
+            patch("clickforge.ui.main_window.startup_warnings", return_value=[]),
+        ):
+            app = ClickForgeWindow(config=self.cfg)
+            for attr in ("_startup_update_job", "_startup_warn_job"):
+                job = getattr(app, attr, None)
+                if job is not None:
+                    app.after_cancel(job)
+                    setattr(app, attr, None)
+
+            observations = {}
+
+            def _capture_and_close():
+                try:
+                    observations["window_exists"] = bool(getattr(app, "_window_exists", False))
+                    observations["withdraw_flag"] = bool(
+                        getattr(app, "_withdraw_called_before_window_exists", False)
+                    )
+                    observations["state"] = app.state()
+                    observations["mapped"] = bool(app.winfo_ismapped())
+                finally:
+                    app._on_close()
+
+            app.after(200, _capture_and_close)
+            app.mainloop()
+
+        self.assertTrue(observations.get("window_exists"))
+        self.assertFalse(observations.get("withdraw_flag"))
+        self.assertEqual(observations.get("state"), "normal")
+        self.assertTrue(observations.get("mapped"))
 
 
 class TestInstaller(unittest.TestCase):
