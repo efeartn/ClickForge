@@ -68,11 +68,6 @@ _VK_TO_NAME: Dict[int, str] = {
     178: "media_stop",
     179: "media_play_pause",
 }
-if keyboard is not None:
-    for _k in keyboard.Key:
-        _vk = getattr(_k.value, "vk", None)
-        if _vk is not None:
-            _VK_TO_NAME.setdefault(_vk, _k.name)
 
 _MOUSE_NAMES = {
     "x1": "mouse:x1",
