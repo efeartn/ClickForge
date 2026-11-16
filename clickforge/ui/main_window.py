@@ -1,8 +1,8 @@
 """Main ClickForge desktop window.
 
-Designed with a utilitarian, high-contrast Linear / Raycast / Fluent aesthetic:
-1px neutral borders, clear surface hierarchy, sans-serif UI labels paired with
-monospace numeric inputs and telemetry, and zero decorative clutter.
+Designed with a utilitarian, high-contrast Carbon & Precision Emerald aesthetic:
+1px neutral borders, adaptive sections that reveal secondary options only when
+active, monospace telemetry paired with sans-serif labels, and low memory use.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import time
 import tkinter as tk
 import webbrowser
 from tkinter import messagebox
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -30,7 +30,7 @@ from clickforge.core.hotkeys import (
     display_name,
 )
 from clickforge.core.sound import play_cue
-from clickforge.core.system import prepare_process, resource_path, startup_warnings
+from clickforge.core.system import IS_WINDOWS, prepare_process, resource_path, startup_warnings
 from clickforge.core.validation import (
     allow_float,
     allow_int,
@@ -65,9 +65,11 @@ from clickforge.ui.widgets import (
     UpdateBanner,
     UpdatePromptDialog,
     accent_button,
+    attach_tooltip,
     caption,
     ghost_button,
     icon_button,
+    keycap_button,
     segmented_options,
     set_accent_enabled,
 )
@@ -80,6 +82,14 @@ TELEMETRY_EVERY = 3
 MIN_WIDTH = 476
 #: Delay (ms) after startup before running the automatic update check.
 STARTUP_UPDATE_DELAY_MS = 600
+
+
+def _fmt_elapsed(seconds: float) -> str:
+    """Format duration in seconds as ``MM:SS.d``."""
+    total_tenths = max(0, int(seconds * 10.0))
+    mins, rem_tenths = divmod(total_tenths, 600)
+    secs, tenths = divmod(rem_tenths, 10)
+    return f"{mins:02d}:{secs:02d}.{tenths}"
 
 
 class ClickForgeWindow(ctk.CTk):
@@ -102,9 +112,9 @@ class ClickForgeWindow(ctk.CTk):
         self._fonts = resolve_fonts(self)
         self._typo = Typography(self._fonts)
 
-        # Keep icon references alive so GC never collects them
-        self._pil_logo: Optional[Image.Image] = None
-        self._icon_photos: List[ImageTk.PhotoImage] = []
+        # Keep compact icon references alive without holding the 512x512 PIL buffer
+        self._logo_small_pil: Optional[Image.Image] = None
+        self._icon_photo: Optional[ImageTk.PhotoImage] = None
         self._header_logo: Optional[ctk.CTkImage] = None
         self._dialog_logo: Optional[ctk.CTkImage] = None
         self._apply_window_icon()
@@ -140,7 +150,10 @@ class ClickForgeWindow(ctk.CTk):
         self._loading_ui: bool = False
         self._poll_tick: int = 0
         self._shown_cps: Optional[Tuple[int, bool]] = None
-        self._shown_total: Optional[int] = None
+        self._shown_total: Optional[Tuple[int, int]] = None
+        self._shown_elapsed: Optional[str] = None
+        self._telemetry_settled: bool = True
+        self._layout_signature: Optional[Tuple[bool, bool, bool]] = None
 
         # Auto-updater & Windows Setup state
         self._update_release: Optional[updater.ReleaseInfo] = None
@@ -188,8 +201,8 @@ class ClickForgeWindow(ctk.CTk):
         if center:
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
-            x = max(24, (sw - req_w) // 2)
-            y = max(24, (sh - req_h) // 2 - 24)
+            x = max(20, min((sw - req_w) // 2, max(20, sw - req_w - 20)))
+            y = max(20, min((sh - req_h) // 2 - 20, max(20, sh - req_h - 48)))
             self.geometry(f"{width}x{height}+{x}+{y}")
         else:
             cur_x = self.winfo_x()
@@ -213,31 +226,64 @@ class ClickForgeWindow(ctk.CTk):
 
     # ── Window Icon & OS Chrome ──────────────────────────────────────
 
+    def _get_logo_small(self) -> Optional[Image.Image]:
+        """Load a 68x68 RGBA thumbnail once and immediately free the 512x512 buffer."""
+        if self._logo_small_pil is not None:
+            return self._logo_small_pil
+        png_path = resource_path("assets", "icon.png")
+        ico_path = resource_path("assets", "icon.ico")
+        src = png_path if os.path.exists(png_path) else ico_path
+        if not os.path.exists(src):
+            return None
+        try:
+            with Image.open(src) as raw:
+                rgba = raw.convert("RGBA")
+                try:
+                    self._logo_small_pil = (
+                        rgba.resize((68, 68), Image.Resampling.LANCZOS)
+                        if rgba.size != (68, 68)
+                        else rgba.copy()
+                    )
+                finally:
+                    rgba.close()
+        except Exception:
+            return None
+        return self._logo_small_pil
+
+    def _get_dialog_logo(self) -> Optional[ctk.CTkImage]:
+        """Lazy-build the 34x34 dialog CTkImage only when a modal opens."""
+        if self._dialog_logo is None:
+            logo_pil = self._get_logo_small()
+            if logo_pil is not None:
+                try:
+                    self._dialog_logo = ctk.CTkImage(
+                        light_image=logo_pil, dark_image=logo_pil, size=(34, 34)
+                    )
+                except Exception:
+                    return None
+        return self._dialog_logo
+
     def _apply_window_icon(self) -> None:
         ico_path = resource_path("assets", "icon.ico")
-        png_path = resource_path("assets", "icon.png")
-        try:
-            if os.path.exists(ico_path):
+        has_ico = os.path.exists(ico_path)
+        if has_ico:
+            try:
                 self.iconbitmap(ico_path)
                 self.wm_iconbitmap(ico_path)
-        except Exception:
-            pass
-        try:
-            if not self._icon_photos:
-                src = png_path if os.path.exists(png_path) else ico_path
-                if os.path.exists(src):
-                    if self._pil_logo is None:
-                        self._pil_logo = Image.open(src).convert("RGBA")
-                    self._icon_photos = [
-                        ImageTk.PhotoImage(
-                            self._pil_logo.resize((sz, sz), Image.Resampling.LANCZOS)
+            except Exception:
+                pass
+        if not IS_WINDOWS or not has_ico:
+            try:
+                if self._icon_photo is None:
+                    logo_pil = self._get_logo_small()
+                    if logo_pil is not None:
+                        self._icon_photo = ImageTk.PhotoImage(
+                            logo_pil.resize((32, 32), Image.Resampling.LANCZOS)
                         )
-                        for sz in (16, 24, 32, 48, 64)
-                    ]
-            if self._icon_photos:
-                self.wm_iconphoto(True, *self._icon_photos)
-        except Exception:
-            pass
+                if self._icon_photo is not None:
+                    self.wm_iconphoto(True, self._icon_photo)
+            except Exception:
+                pass
 
     def _check_platform_warnings(self) -> None:
         for msg in startup_warnings():
@@ -251,25 +297,17 @@ class ClickForgeWindow(ctk.CTk):
 
         # 1. Header Bar
         hdr = ctk.CTkFrame(self, fg_color="transparent")
-        hdr.pack(fill="x", padx=pad, pady=(14, 10))
+        hdr.pack(fill="x", padx=pad, pady=(12, 8))
         self.hdr = hdr
 
         brand = ctk.CTkFrame(hdr, fg_color="transparent")
         brand.pack(side="left")
 
-        png_path = resource_path("assets", "icon.png")
-        if self._pil_logo is None and os.path.exists(png_path):
-            try:
-                self._pil_logo = Image.open(png_path).convert("RGBA")
-            except Exception:
-                pass
-        if self._pil_logo is not None:
+        logo_pil = self._get_logo_small()
+        if logo_pil is not None:
             try:
                 self._header_logo = ctk.CTkImage(
-                    light_image=self._pil_logo, dark_image=self._pil_logo, size=(22, 22)
-                )
-                self._dialog_logo = ctk.CTkImage(
-                    light_image=self._pil_logo, dark_image=self._pil_logo, size=(34, 34)
+                    light_image=logo_pil, dark_image=logo_pil, size=(22, 22)
                 )
                 ctk.CTkLabel(brand, text="", image=self._header_logo).pack(
                     side="left", padx=(0, 8)
@@ -280,12 +318,14 @@ class ClickForgeWindow(ctk.CTk):
         ctk.CTkLabel(
             brand, text=__app_name__, font=typo.title, text_color=t.TEXT
         ).pack(side="left")
-        ctk.CTkLabel(
+        ver_lbl = ctk.CTkLabel(
             brand,
-            text=f"v{__version__} · {__codename__}",
+            text=f"v{__version__}",
             font=typo.mono_small,
             text_color=t.TEXT_FAINT,
-        ).pack(side="left", padx=(6, 0), pady=(2, 0))
+        )
+        ver_lbl.pack(side="left", padx=(6, 0), pady=(2, 0))
+        attach_tooltip(ver_lbl, f"{__app_name__} v{__version__} — {__codename__}")
 
         # Right-side header controls: Sound | Theme | Pin | Update | [Setup] | Status Badge
         self.status_badge = StatusBadge(hdr, typo)
@@ -302,6 +342,7 @@ class ClickForgeWindow(ctk.CTk):
             )
             self.setup_btn.configure(height=28, font=typo.caption)
             self.setup_btn.pack(side="right", padx=(6, 0))
+            attach_tooltip(self.setup_btn, "Install ClickForge to Windows Programs")
 
         self.update_btn = icon_button(
             hdr,
@@ -311,6 +352,17 @@ class ClickForgeWindow(ctk.CTk):
             command=lambda: self._check_for_updates(manual=True),
         )
         self.update_btn.pack(side="right", padx=(6, 0))
+        attach_tooltip(
+            self.update_btn,
+            lambda: (
+                f"Update available: v{self._update_release.version_text}"
+                if (
+                    self._update_release is not None
+                    and updater.is_newer(self._update_release.version)
+                )
+                else "Check for updates"
+            ),
+        )
 
         self.pin_btn = icon_button(
             hdr,
@@ -320,6 +372,10 @@ class ClickForgeWindow(ctk.CTk):
             command=self._toggle_always_on_top,
         )
         self.pin_btn.pack(side="right", padx=(6, 0))
+        attach_tooltip(
+            self.pin_btn,
+            lambda: "Always on top: On" if self._always_on_top else "Always on top: Off",
+        )
 
         self.theme_btn = icon_button(
             hdr,
@@ -329,6 +385,10 @@ class ClickForgeWindow(ctk.CTk):
             command=self._cycle_theme,
         )
         self.theme_btn.pack(side="right", padx=(6, 0))
+        attach_tooltip(
+            self.theme_btn,
+            lambda: f"Theme: {self._theme_mode} (click to cycle)",
+        )
 
         self.sound_btn = icon_button(
             hdr,
@@ -338,20 +398,24 @@ class ClickForgeWindow(ctk.CTk):
             command=self._toggle_sound_cue,
         )
         self.sound_btn.pack(side="right", padx=(6, 0))
+        attach_tooltip(
+            self.sound_btn,
+            lambda: "Audio cue: On" if self._sound_cue else "Audio cue: Off",
+        )
 
         # Update / Setup notice slot (packed on demand right under header)
         self.update_banner = UpdateBanner(self, typo)
 
         # 2. Telemetry & Profile Bar
         telemetry_card = Card(self, typo)
-        telemetry_card.pack(fill="x", padx=pad, pady=(0, 8))
+        telemetry_card.pack(fill="x", padx=pad, pady=(0, t.GAP))
         self._telemetry_card = telemetry_card
         self.telemetry_card = telemetry_card
 
         tel_top = ctk.CTkFrame(telemetry_card.body, fg_color="transparent")
         tel_top.pack(fill="x")
 
-        # Left: Live CPS + Total Clicks
+        # Left: Live CPS + Total Clicks + Elapsed Time
         cps_box = ctk.CTkFrame(tel_top, fg_color="transparent")
         cps_box.pack(side="left")
 
@@ -365,7 +429,7 @@ class ClickForgeWindow(ctk.CTk):
         self.cps_value_lbl.pack(side="left")
 
         cps_meta = ctk.CTkFrame(cps_box, fg_color="transparent")
-        cps_meta.pack(side="left", padx=(8, 0))
+        cps_meta.pack(side="left", padx=(10, 0))
         ctk.CTkLabel(
             cps_meta,
             text="LIVE CPS",
@@ -374,15 +438,27 @@ class ClickForgeWindow(ctk.CTk):
             anchor="w",
             height=14,
         ).pack(anchor="w")
+
+        meta_stats = ctk.CTkFrame(cps_meta, fg_color="transparent")
+        meta_stats.pack(anchor="w")
         self.total_value_lbl = ctk.CTkLabel(
-            cps_meta,
+            meta_stats,
             text="Total: 0",
             font=typo.mono_small,
             text_color=t.TEXT_MUTED,
             anchor="w",
             height=16,
         )
-        self.total_value_lbl.pack(anchor="w")
+        self.total_value_lbl.pack(side="left")
+        self.elapsed_value_lbl = ctk.CTkLabel(
+            meta_stats,
+            text="Elapsed: 00:00.0",
+            font=typo.mono_small,
+            text_color=t.TEXT_FAINT,
+            anchor="w",
+            height=16,
+        )
+        self.elapsed_value_lbl.pack(side="left", padx=(12, 0))
 
         # Right: Reset button
         self.reset_btn = ghost_button(
@@ -390,9 +466,13 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.reset_btn.pack(side="right")
 
+        ctk.CTkFrame(
+            telemetry_card.body, height=1, fg_color=t.BORDER, corner_radius=0
+        ).pack(fill="x", pady=(8, 8))
+
         # Preset selector bar inside telemetry card
         preset_row = ctk.CTkFrame(telemetry_card.body, fg_color="transparent")
-        preset_row.pack(fill="x", pady=(10, 0))
+        preset_row.pack(fill="x", pady=(0, 0))
         ctk.CTkLabel(
             preset_row,
             text="Preset",
@@ -409,9 +489,9 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.preset_seg.pack(side="left", fill="x", expand=True)
 
-        # 3. Speed & Repeat Card (Pro Mode)
+        # 3. Speed & Repeat Card
         speed_card = Card(self, typo, title="Speed & Repeat")
-        speed_card.pack(fill="x", padx=pad, pady=(0, 8))
+        speed_card.pack(fill="x", padx=pad, pady=(0, t.GAP))
         self.speed_card = speed_card
 
         self.speed_row = FormRow(speed_card.body, typo, label="Interval")
@@ -452,9 +532,9 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.repeat_unit_lbl.pack(side="left", padx=(6, 0))
 
-        # 4. Action & Target Position Card (Pro Mode)
+        # 4. Action & Target Position Card
         target_card = Card(self, typo, title="Action & Target")
-        target_card.pack(fill="x", padx=pad, pady=(0, 8))
+        target_card.pack(fill="x", padx=pad, pady=(0, t.GAP))
         self.target_card = target_card
 
         self.button_row = FormRow(target_card.body, typo, label="Button")
@@ -521,15 +601,15 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.pick_btn.pack(side="right", fill="x", expand=True)
 
-        # 5. Humanizer (Anti-Pattern Randomization) Card (Pro Mode)
+        # 5. Humanizer (Anti-Pattern Randomization) Card
         human_card = Card(self, typo, title="Humanizer")
-        human_card.pack(fill="x", padx=pad, pady=(0, 8))
+        human_card.pack(fill="x", padx=pad, pady=(0, t.GAP))
         self.human_card = human_card
 
         self.humanize_var = tk.BooleanVar(value=False)
         self.humanize_switch = ctk.CTkSwitch(
             human_card.header,
-            text="Enable",
+            text="",
             variable=self.humanize_var,
             font=typo.caption,
             text_color=t.TEXT_MUTED,
@@ -537,11 +617,21 @@ class ClickForgeWindow(ctk.CTk):
             progress_color=t.ACCENT,
             button_color=t.TEXT_ON_ACCENT,
             button_hover_color=t.TEXT,
+            width=36,
             switch_width=34,
             switch_height=18,
             command=self._on_humanize_toggled,
         )
         self.humanize_switch.pack(side="right")
+
+        self.humanize_status_lbl = ctk.CTkLabel(
+            human_card.header,
+            text="Off",
+            font=typo.caption,
+            text_color=t.TEXT_FAINT,
+            height=18,
+        )
+        self.humanize_status_lbl.pack(side="right", padx=(0, 8))
 
         self.jitter_row = FormRow(human_card.body, typo, label="Jitter")
         self.jitter_prefix_lbl = ctk.CTkLabel(
@@ -636,19 +726,18 @@ class ClickForgeWindow(ctk.CTk):
 
         self.hotkey_lbl = ctk.CTkLabel(
             trig_row,
-            text="Hotkey:",
+            text="Hotkey",
             font=typo.label,
             text_color=t.TEXT_MUTED,
         )
-        self.hotkey_lbl.pack(side="left", padx=(4, 6))
+        self.hotkey_lbl.pack(side="left", padx=(4, 8))
 
-        self.hotkey_btn = ghost_button(
+        self.hotkey_btn = keycap_button(
             trig_row,
             typo,
-            text="[ F6 ]",
+            text="F6",
             command=self._start_hotkey_recording,
             width=120,
-            font=typo.mono,
         )
         self.hotkey_btn.pack(side="right", fill="x", expand=True)
 
@@ -807,7 +896,62 @@ class ClickForgeWindow(ctk.CTk):
             self._mark_custom_and_save()
         return jp, h_min, h_max, pj
 
+    def _sync_adaptive_sections(self) -> None:
+        """Show/hide secondary rows cleanly and resize to fit content height."""
+        fixed_repeat = self.repeat_seg.get_key() == "fixed"
+        fixed_pos = self.pos_seg.get_key() == "fixed"
+        hum_enabled = bool(self.humanize_var.get())
+
+        if fixed_repeat:
+            self.repeat_seg.pack_configure(padx=(0, 6))
+            if not self.repeat_count_entry.winfo_manager():
+                self.repeat_count_entry.pack(side="left")
+            if not self.repeat_unit_lbl.winfo_manager():
+                self.repeat_unit_lbl.pack(side="left", padx=(6, 0))
+        else:
+            if self.repeat_count_entry.winfo_manager():
+                self.repeat_count_entry.pack_forget()
+            if self.repeat_unit_lbl.winfo_manager():
+                self.repeat_unit_lbl.pack_forget()
+            self.repeat_seg.pack_configure(padx=(0, 0))
+
+        if fixed_pos:
+            self.pos_mode_row.pack_configure(pady=(0, 8))
+            if not self.coords_row.winfo_manager():
+                self.coords_row.pack(fill="x", pady=(0, 0))
+        else:
+            if self.coords_row.winfo_manager():
+                self.coords_row.pack_forget()
+            self.pos_mode_row.pack_configure(pady=(0, 0))
+
+        if hum_enabled:
+            self.humanize_status_lbl.configure(text="Active", text_color=t.ACCENT)
+            self.human_card.header.pack_configure(pady=(12, 0))
+            if not self.human_card.body.winfo_manager():
+                self.human_card.body.pack(fill="both", expand=True, padx=14, pady=(8, 12))
+        else:
+            self.humanize_status_lbl.configure(text="Off", text_color=t.TEXT_FAINT)
+            if self.human_card.body.winfo_manager():
+                self.human_card.body.pack_forget()
+            self.human_card.header.pack_configure(pady=(10, 10))
+
+        try:
+            focused = self.focus_get()
+            if focused is not None and not focused.winfo_ismapped():
+                self.focus_set()
+        except (KeyError, tk.TclError):
+            pass
+
+        sig = (fixed_repeat, fixed_pos, hum_enabled)
+        if self._layout_signature is None:
+            self._layout_signature = sig
+        elif sig != self._layout_signature:
+            self._layout_signature = sig
+            self._fit_to_content()
+
     def _refresh_interactive_states(self) -> None:
+        self._sync_adaptive_sections()
+
         running = self._engine.is_active
         editable = not running
 
@@ -856,13 +1000,12 @@ class ClickForgeWindow(ctk.CTk):
         self.hold_min_entry.set_enabled(hum_active)
         self.hold_max_entry.set_enabled(hum_active)
 
-        pos_jit_active = hum_active and (self.pos_seg.get_key() == "fixed")
-        self.pos_jitter_entry.set_enabled(pos_jit_active)
+        self.pos_jitter_entry.set_enabled(hum_active)
         self.pos_jitter_lbl.configure(
-            text_color=t.TEXT_MUTED if pos_jit_active else t.TEXT_FAINT
+            text_color=t.TEXT_MUTED if hum_active else t.TEXT_FAINT
         )
         self.pos_jitter_unit_lbl.configure(
-            text_color=t.TEXT_MUTED if pos_jit_active else t.TEXT_FAINT
+            text_color=t.TEXT_MUTED if hum_active else t.TEXT_FAINT
         )
 
         # Trigger & Hotkey controls
@@ -871,6 +1014,9 @@ class ClickForgeWindow(ctk.CTk):
 
         # Status badge & primary Start/Stop button
         self.status_badge.set_running(running)
+        if not running and self._shown_cps != (0, False):
+            self._shown_cps = (0, False)
+            self.cps_value_lbl.configure(text="0", text_color=t.TEXT)
         hk_label = display_name(self._hotkeys.binding)
         if running:
             self.start_btn.configure(
@@ -885,7 +1031,7 @@ class ClickForgeWindow(ctk.CTk):
                 hover_color=t.ACCENT_HOVER,
             )
         if not self._recording_hotkey:
-            self.hotkey_btn.configure(text=f"[ {hk_label} ]")
+            self.hotkey_btn.configure(text=hk_label)
 
     # ── Widget Event Handlers ────────────────────────────────────────
 
@@ -1021,9 +1167,11 @@ class ClickForgeWindow(ctk.CTk):
     def _reset_counters(self) -> None:
         self._engine.reset_counter()
         self._shown_cps = (0, False)
-        self._shown_total = 0
+        self._shown_total = (0, 0)
+        self._shown_elapsed = "Elapsed: 00:00.0"
         self.cps_value_lbl.configure(text="0", text_color=t.TEXT)
         self.total_value_lbl.configure(text="Total: 0")
+        self.elapsed_value_lbl.configure(text="Elapsed: 00:00.0")
 
     # ── Coordinate Picker & Hotkey Recording ─────────────────────────
 
@@ -1090,7 +1238,7 @@ class ClickForgeWindow(ctk.CTk):
             jitter_pct=jp,
             hold_min_ms=h_min,
             hold_max_ms=h_max,
-            position_jitter_px=pj if fixed_pos is not None else 0,
+            position_jitter_px=pj if bool(self.humanize_var.get()) else 0,
             corner_failsafe=True,
         ).sanitized()
 
@@ -1114,11 +1262,13 @@ class ClickForgeWindow(ctk.CTk):
         snapshot = self._build_settings_snapshot()
         self._save_current_settings()
         if self._engine.start(snapshot):
+            self._telemetry_settled = False
             play_cue("start", self._sound_cue)
             self._refresh_interactive_states()
 
     def _stop_clicking(self) -> None:
         self._engine.stop(wait=False)
+        self._telemetry_settled = False
         play_cue("stop", self._sound_cue)
         self._refresh_interactive_states()
 
@@ -1137,21 +1287,37 @@ class ClickForgeWindow(ctk.CTk):
                 # One bad event must never kill the poll loop.
                 pass
 
-        # 2. Repaint live telemetry (rolling 1-second CPS + total) only when it changed
+        # 2. Repaint telemetry (~16 Hz) only while running or until stopped state settles
         self._poll_tick += 1
         if self._poll_tick >= TELEMETRY_EVERY:
             self._poll_tick = 0
-            cps = self._engine.cps()
-            active = self._engine.is_active and cps > 0
-            if self._shown_cps != (cps, active):
-                self._shown_cps = (cps, active)
-                self.cps_value_lbl.configure(
-                    text=str(cps), text_color=t.ACCENT if active else t.TEXT
-                )
-            total = self._engine.click_count
-            if self._shown_total != total:
-                self._shown_total = total
-                self.total_value_lbl.configure(text=f"Total: {total:,}")
+            active_run = self._engine.is_active
+            if active_run:
+                self._telemetry_settled = False
+            if active_run or not self._telemetry_settled:
+                cps = self._engine.cps() if active_run else 0
+                cps_active = active_run and cps > 0
+                if self._shown_cps != (cps, cps_active):
+                    self._shown_cps = (cps, cps_active)
+                    self.cps_value_lbl.configure(
+                        text=str(cps), text_color=t.ACCENT if cps_active else t.TEXT
+                    )
+                total = self._engine.click_count
+                target = self._engine.target_count
+                if self._shown_total != (total, target):
+                    self._shown_total = (total, target)
+                    total_text = (
+                        f"Total: {total:,} / {target:,}"
+                        if target > 0
+                        else f"Total: {total:,}"
+                    )
+                    self.total_value_lbl.configure(text=total_text)
+                elapsed_text = f"Elapsed: {_fmt_elapsed(self._engine.elapsed_seconds())}"
+                if self._shown_elapsed != elapsed_text:
+                    self._shown_elapsed = elapsed_text
+                    self.elapsed_value_lbl.configure(text=elapsed_text)
+                if not active_run:
+                    self._telemetry_settled = True
 
         self._poll_job = self.after(POLL_INTERVAL_MS, self._poll)
 
@@ -1165,6 +1331,7 @@ class ClickForgeWindow(ctk.CTk):
                 self.toggle_clicking()
         elif kind in ("trigger_release", "panic", "stopped"):
             # The stop itself already happened on the listener/worker thread.
+            self._telemetry_settled = False
             if kind in ("panic", "stopped"):
                 play_cue("stop", self._sound_cue)
             if kind == "stopped":
@@ -1337,7 +1504,7 @@ class ClickForgeWindow(ctk.CTk):
             primary_label=primary,
             show_desktop_option=show_desk,
             on_confirm=lambda desk: self._run_windows_setup(desk, local_installer, portable_ok),
-            logo_image=self._dialog_logo,
+            logo_image=self._get_dialog_logo(),
             ico_path=ico_path,
         )
 
@@ -1570,7 +1737,7 @@ class ClickForgeWindow(ctk.CTk):
             on_update=accept,
             on_later=later,
             on_skip=skip,
-            logo_image=self._dialog_logo,
+            logo_image=self._get_dialog_logo(),
             ico_path=ico_path if os.path.exists(ico_path) else None,
         )
 

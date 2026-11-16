@@ -2,6 +2,20 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.3.0] - 2026-11-16 — "Carbon"
+
+### Changed
+- **Carbon & Precision Emerald UI Overhaul**: Replaced the violet dark/light palette with neutral carbon/graphite dark surfaces (`#0A0B0D` / `#121418`), clean alabaster light mode surfaces, and restrained Precision Emerald accents (`#10A37F` / `#10B981`). Regenerated matching `.png`, `.ico`, `.icns`, and `.svg` icons plus the full-desktop coordinate picker overlay, styled the global hotkey selector as a tactile keycap button, changed idle status pill copy to **Ready**, and added a 1px divider between telemetry and presets.
+- **Adaptive & Compact Layout**: Dynamically collapses `Fixed XY` coordinates while in `Follow Cursor` mode, collapses `Humanizer` controls when disabled (showing an `Off` / `Active` state pill), and hides the fixed repeat count input in `Infinite` mode (`~614` logical px default height with High-DPI safe screen centering).
+
+### Added
+- **Live Run Telemetry**: Added fixed-repeat progress formatting (`Total: X / Y`), an active/last-run `Elapsed: MM:SS.d` timer, and zero-allocation shared hover tooltips across header icons and version metadata.
+
+### Fixed
+- **Instant Stop CPS Reset**: Reset the `LIVE CPS` display immediately to `0` when clicking stops instead of letting rolling timestamps decay for up to a second.
+- **Follow-Cursor Humanizer Spread**: Fixed `Spread ± px` (`position_jitter_px`) so humanizer cursor spread now works cleanly in both `Follow Cursor` and `Fixed XY` modes.
+- **Idle CPU & RAM Optimizations**: Skipped redundant UI telemetry polling while idle/settled, freed the full 512x512 PIL logo buffer immediately after creating a 68x68 thumbnail, lazy-loaded modal dialog artwork, removed redundant multi-size `PhotoImage` allocations on Windows, and trimmed unused stdlib/Pillow modules from the PyInstaller bundle (`clickforge.spec`).
+
 ## [3.2.1] - 2026-11-14 — "Velocity"
 
 ### Fixed

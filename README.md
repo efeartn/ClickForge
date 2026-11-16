@@ -4,16 +4,16 @@
 
 # ClickForge
 
-**High-precision, modern desktop auto-clicker for Windows, macOS, and Linux.**
+**High-precision, lightweight desktop auto-clicker for Windows, macOS, and Linux.**
 
-Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginPeriod`), and an Obsidian & Porcelain UI palette.
+Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
 
-[![Latest Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=7C3AED&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=10A37F&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-52525B)](#download--install)
 [![Changelog](https://img.shields.io/badge/Changelog-History-3F3F46)](CHANGELOG.md)
 
-[![Download Windows Setup](https://img.shields.io/badge/Windows%20Installer-ClickForge--Setup.exe-7C3AED?style=for-the-badge&logo=windows)](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe)
+[![Download Windows Setup](https://img.shields.io/badge/Windows%20Installer-ClickForge--Setup.exe-10A37F?style=for-the-badge&logo=windows)](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe)
 &nbsp;
 [![Portable & Other Platforms](https://img.shields.io/badge/All%20Downloads-GitHub%20Releases-27272A?style=for-the-badge)](https://github.com/efeartn/ClickForge/releases/latest)
 
@@ -26,12 +26,12 @@ Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginP
 <table>
   <tr>
     <td align="center" width="50%">
-      <strong>Unified Workspace — Dark Mode</strong><br/><br/>
-      <img src="docs/screenshots/app-dark.png" alt="ClickForge Dark Mode" width="380" />
+      <strong>Carbon Dark Mode</strong><br/><br/>
+      <img src="docs/screenshots/app-dark.png" alt="ClickForge Carbon Dark Mode" width="360" />
     </td>
     <td align="center" width="50%">
-      <strong>Unified Workspace — Light Mode</strong><br/><br/>
-      <img src="docs/screenshots/app-light.png" alt="ClickForge Light Mode" width="380" />
+      <strong>Carbon Light Mode</strong><br/><br/>
+      <img src="docs/screenshots/app-light.png" alt="ClickForge Light Mode" width="360" />
     </td>
   </tr>
   <tr>
@@ -50,12 +50,13 @@ Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginP
 
 ## Ready Out of the Box
 
-ClickForge opens directly into one unified workspace with ready-to-use defaults:
+ClickForge opens into a compact, adaptive desktop utility engineered for crisp response and minimal memory footprint:
 
+- **Adaptive & Compact Workspace:** Inactive inputs (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) stay collapsed so the main window stays compact and fits comfortably on laptop and High-DPI displays.
 - **Follow Cursor by Default:** Clicks land wherever your pointer is immediately on launch (switch to **Fixed XY** + multi-monitor **Pick** anytime).
 - **`10 ms` (`~100 CPS`) Default Speed:** Snappy out of the box, scalable from 1 click/hour up to **`1,000 CPS`** (`1 ms` interval).
-- **Working `F6` Trigger & `Esc` Panic:** Press **`F6`** immediately on launch to start/stop (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys, or hit **`Esc`** / fling pointer to `(0, 0)` for instant emergency stop.
-- **Fast Startup (~1.2 s):** Folder-based distribution (`_internal/`), single-pass layout construction, and cached icons launch cleanly without single-file extraction delays.
+- **Working `F6` Trigger & `Esc` Panic:** Press **`F6`** immediately on launch to start/stop (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the tactile keycap control, or hit **`Esc`** / fling pointer to `(0, 0)` for instant emergency stop.
+- **Low Overhead by Design:** Skips telemetry repaints while idle, uses zero-allocation hover tooltips (`1` transient popup only while hovered), frees full-size icon buffers immediately after startup, and boots in ~1.2 s without single-file extraction delays.
 
 ---
 
@@ -91,12 +92,12 @@ ClickForge opens directly into one unified workspace with ready-to-use defaults:
 - **Windows `SendInput` Fast Path:** Pre-allocated `ctypes` `INPUT` structures avoid per-click allocation overhead, sustaining up to **`1,000 CPS`**.
 - **Sub-Millisecond Scheduler (`timing.py`):** Acquires `timeBeginPeriod(1)` only while clicking is active and pairs interruptible `Event.wait` with a light final spin (`1.5 ms` threshold).
 - **Thread-Safe Guaranteed Release:** Stopping mid-hold or closing during a run always emits `mouseUp` so mouse buttons never remain stuck.
-- **Live Telemetry & Persistent Config:** Real-time rolling 1-second **Live CPS** readout, total click counter, and schema-validated JSON settings stored per user via `platformdirs`.
+- **Humanizer in Every Mode:** Gaussian interval jitter (`± % σ`), triangular randomized hold duty (`ms`), and uniform disk coordinate **Spread (`± px`)** work in both **Follow Cursor** and **Fixed XY** modes.
 
-### Desktop Ergonomics & Auto-Updater
-- **Windows Setup Integration:** Official `ClickForge-Setup.exe` wizard plus an in-app **Setup** button when running uninstalled on Windows.
-- **Automatic Startup Update Check:** Checks GitHub Releases on launch, previews `"What's New"` release notes, verifies download byte size + **`SHA-256`** digest, and installs rollback-safe updates automatically on frozen Windows builds (opens the release page on macOS, Linux, or source runs).
-- **Header Quick Controls:** Toggle **Sound** start/stop chimes, cycle **System / Dark / Light** theme, toggle **Always-on-Top**, or manually check for updates.
+### Live Run Telemetry & Auto-Updater
+- **Live Run Readout:** Displays rolling 1-second **LIVE CPS** (resetting immediately to `0` when stopped), **Total** clicks (`Total: X / Y` for fixed-repeat runs), **Elapsed** run timer (`MM:SS.d`), and schema-validated settings persisted per user via `platformdirs`.
+- **Header Quick Controls & Tooltips:** Hover tooltips on every header icon (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check, Windows **Setup** button, and version tag).
+- **Automatic Startup Update Check:** Checks GitHub Releases on launch, previews `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and installs rollback-safe updates automatically on frozen Windows builds (opens the release page on macOS, Linux, or source runs).
 
 ---
 
@@ -145,10 +146,10 @@ ClickForge/
 │   │   ├── updater.py          # GitHub Releases updater with SHA-256 & rollback
 │   │   └── validation.py       # Numeric parsing and speed/unit conversions
 │   └── ui/
-│       ├── main_window.py      # Primary application window & event poll loop
+│       ├── main_window.py      # Primary adaptive window & idle-skipped poll loop
 │       ├── picker.py           # Multi-monitor fixed XY coordinate picker overlay
-│       ├── theme.py            # Light/Dark Obsidian & Porcelain palette tokens
-│       └── widgets.py          # Reusable cards, segmented pills, modal dialogs
+│       ├── theme.py            # Light/Dark Carbon & Precision Emerald palette tokens
+│       └── widgets.py          # Cards, pills, keycap button, shared tooltips, dialogs
 ├── docs/
 │   └── screenshots/            # Dark, light, Windows setup, and updater previews
 ├── installer/

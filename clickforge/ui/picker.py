@@ -57,9 +57,9 @@ class CoordinatePicker:
 
         canvas = tk.Canvas(
             top,
-            bg="#09090D",
+            bg="#0A0B0D",
             highlightthickness=1,
-            highlightbackground="#7C3AED",
+            highlightbackground="#10B981",
             cursor="crosshair",
         )
         canvas.pack(fill="both", expand=True)
@@ -68,9 +68,9 @@ class CoordinatePicker:
         self._height = height
 
         # Crosshair guide lines
-        self._h_line = canvas.create_line(0, 0, width, 0, fill="#A78BFA", width=1, dash=(4, 4))
-        self._v_line = canvas.create_line(0, 0, 0, height, fill="#A78BFA", width=1, dash=(4, 4))
-        self._ring = canvas.create_oval(-8, -8, 8, 8, outline="#7C3AED", width=2)
+        self._h_line = canvas.create_line(0, 0, width, 0, fill="#34D399", width=1, dash=(4, 4))
+        self._v_line = canvas.create_line(0, 0, 0, height, fill="#34D399", width=1, dash=(4, 4))
+        self._ring = canvas.create_oval(-8, -8, 8, 8, outline="#10B981", width=2)
 
         # Instruction banner at top center
         banner_w = 420
@@ -80,8 +80,8 @@ class CoordinatePicker:
             24,
             banner_x + banner_w // 2,
             60,
-            fill="#16161A",
-            outline="#7C3AED",
+            fill="#121418",
+            outline="#10B981",
             width=1,
         )
         canvas.create_text(
@@ -93,7 +93,7 @@ class CoordinatePicker:
         )
 
         # Floating coordinate readout pill near cursor
-        self._pill_bg = canvas.create_rectangle(0, 0, 148, 28, fill="#16161A", outline="#A78BFA", width=1)
+        self._pill_bg = canvas.create_rectangle(0, 0, 148, 28, fill="#121418", outline="#34D399", width=1)
         self._pill_txt = canvas.create_text(
             0, 0, text="X: 0  Y: 0", fill="#FFFFFF", font=(self._fonts.mono, 10, "bold")
         )

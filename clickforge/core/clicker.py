@@ -102,6 +102,9 @@ class ClickEngine:
         # Button currently held down by the worker (for the failsafe).
         self._held: Optional[str] = None
         self._held_lock = threading.Lock()
+        self._target_count: int = 0
+        self._run_start_perf: float = 0.0
+        self._last_elapsed: float = 0.0
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -123,6 +126,16 @@ class ClickEngine:
     def click_count(self) -> int:
         return self._click_count
 
+    @property
+    def target_count(self) -> int:
+        return self._target_count
+
+    def elapsed_seconds(self) -> float:
+        """Elapsed duration (seconds) of the current or most recent run."""
+        if self.is_active and self._run_start_perf > 0:
+            return max(0.0, time.perf_counter() - self._run_start_perf)
+        return self._last_elapsed
+
     def cps(self) -> int:
         """Physical clicks performed during the last rolling second."""
         cutoff = time.perf_counter() - 1.0
@@ -137,6 +150,9 @@ class ClickEngine:
     def reset_counter(self) -> None:
         self._click_count = 0
         self._timestamps.clear()
+        self._last_elapsed = 0.0
+        self._target_count = 0
+        self._run_start_perf = 0.0
 
     def start(self, settings: ClickSettings) -> bool:
         """Start a run.  Returns ``False`` if a run is already active."""
@@ -209,6 +225,9 @@ class ClickEngine:
             or s.fixed_position[1] > corner_margin
         )
         remaining = s.repeat_count
+        self._target_count = remaining
+        self._run_start_perf = perf()
+        self._last_elapsed = 0.0
         reason = "stopped"
 
         try:
@@ -224,6 +243,11 @@ class ClickEngine:
                         if s.humanize and s.position_jitter_px:
                             x, y = self._jitter_point(x, y, s.position_jitter_px)
                         backend.move(x, y)
+                    elif s.humanize and s.position_jitter_px > 0:
+                        cur = backend.position()
+                        if cur is not None:
+                            jx, jy = self._jitter_point(cur[0], cur[1], s.position_jitter_px)
+                            backend.move(jx, jy)
 
                     for i in range(clicks_per_action):
                         if stop.is_set():
@@ -266,6 +290,8 @@ class ClickEngine:
         except Exception:
             reason = "error"
         finally:
+            if self._run_start_perf > 0:
+                self._last_elapsed = max(0.0, perf() - self._run_start_perf)
             # Guaranteed mouse-up: a stop can never leave a button stuck down.
             self.release_held()
             if self._on_stopped is not None:

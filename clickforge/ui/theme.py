@@ -1,9 +1,8 @@
 """Design tokens: colors, typography and icon glyphs.
 
 Colors are ``(light, dark)`` tuples as expected by CustomTkinter. The palette
-is an Apple-inspired minimalist dark/light system: subtle neutral surfaces,
-refined specular borders, and a purposeful royal violet accent reserved for
-primary actions and active focus states.
+uses neutral carbon/graphite surfaces, crisp 1px borders, and a restrained
+precision-emerald accent reserved for primary actions and active states.
 """
 
 from __future__ import annotations
@@ -14,38 +13,38 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 # ── Surfaces ─────────────────────────────────────────────────────────
-BG = ("#F5F5F7", "#0C0C10")
-SURFACE = ("#FFFFFF", "#15151B")
-FIELD = ("#EEEEF1", "#1D1D24")
-FIELD_DISABLED = ("#F5F5F7", "#131318")
-BORDER = ("#E2E2E8", "#262633")
-BORDER_STRONG = ("#CECED6", "#363646")
-HOVER = ("#E8E8ED", "#23232D")
-SEG_SELECTED = ("#FFFFFF", "#2D2D3A")
-SEG_SELECTED_HOVER = ("#FFFFFF", "#363646")
+BG = ("#F3F4F6", "#0A0B0D")
+SURFACE = ("#FFFFFF", "#121418")
+FIELD = ("#EBEDF0", "#171A20")
+FIELD_DISABLED = ("#F4F5F7", "#0F1115")
+BORDER = ("#E2E5EA", "#22262E")
+BORDER_STRONG = ("#C8CDD6", "#303642")
+HOVER = ("#E4E7EC", "#1D2026")
+SEG_SELECTED = ("#FFFFFF", "#262B35")
+SEG_SELECTED_HOVER = ("#F9FAFB", "#2E3440")
 
 # ── Text ─────────────────────────────────────────────────────────────
-TEXT = ("#18181B", "#EDEDF0")
-TEXT_MUTED = ("#5B5B66", "#A1A1AC")
-TEXT_FAINT = ("#9A9AA3", "#606070")
+TEXT = ("#111318", "#ECEDEF")
+TEXT_MUTED = ("#525866", "#949BA6")
+TEXT_FAINT = ("#8E95A2", "#5A606B")
 TEXT_ON_ACCENT = ("#FFFFFF", "#FFFFFF")
 
 # ── Semantic ─────────────────────────────────────────────────────────
-ACCENT = ("#7C3AED", "#7C3AED")
-ACCENT_HOVER = ("#6D28D9", "#8B5CF6")
-ACCENT_DISABLED = ("#D9D2EC", "#29243C")
+ACCENT = ("#059669", "#10A37F")
+ACCENT_HOVER = ("#047857", "#0E8F6F")
+ACCENT_DISABLED = ("#D1FAE5", "#142923")
 DANGER = ("#DC2626", "#E5484D")
 DANGER_HOVER = ("#B91C1C", "#F06A6E")
-SUCCESS = ("#16A34A", "#3DD68C")
-SUCCESS_SOFT = ("#E8F7EE", "#11241A")
+SUCCESS = ("#059669", "#10B981")
+SUCCESS_SOFT = ("#ECFDF5", "#0D241C")
 WARNING = ("#D97706", "#F5A524")
 
 # ── Metrics ──────────────────────────────────────────────────────────
 RADIUS = 10
 RADIUS_SM = 7
 CONTROL_H = 32
-PAD = 16
-GAP = 12
+PAD = 14
+GAP = 10
 
 IS_WINDOWS = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"

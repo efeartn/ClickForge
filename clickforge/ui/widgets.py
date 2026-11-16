@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Callable, Dict, Optional, Sequence
+from typing import Callable, Dict, Optional, Sequence, Union
 
 import tkinter as tk
 
@@ -84,7 +84,7 @@ class Segmented(ctk.CTkSegmentedButton):
         self._user_command = command
         super().__init__(
             master, values=list(options.values()), height=t.CONTROL_H,
-            corner_radius=t.RADIUS_SM, border_width=2, font=typo.label,
+            corner_radius=t.RADIUS_SM, border_width=1, font=typo.label,
             fg_color=t.FIELD, unselected_color=t.FIELD, unselected_hover_color=t.HOVER,
             selected_color=t.SEG_SELECTED, selected_hover_color=t.SEG_SELECTED_HOVER,
             text_color=t.TEXT, text_color_disabled=t.TEXT_FAINT,
@@ -190,6 +190,18 @@ def set_accent_enabled(button: ctk.CTkButton, enabled: bool) -> None:
     )
 
 
+def keycap_button(
+    master, typo: Typography, text: str, command, width: int = 96
+) -> ctk.CTkButton:
+    """Tactile keycap-styled button suited for global hotkey bindings."""
+    return ctk.CTkButton(
+        master, text=text, width=width, height=t.CONTROL_H, corner_radius=t.RADIUS_SM,
+        border_width=1, border_color=t.BORDER_STRONG, fg_color=t.FIELD,
+        hover_color=t.HOVER, text_color=t.TEXT, text_color_disabled=t.TEXT_FAINT,
+        font=typo.mono, command=command,
+    )
+
+
 class StatusBadge(ctk.CTkFrame):
     """Non-interactive pill: colored dot + state label."""
 
@@ -200,7 +212,7 @@ class StatusBadge(ctk.CTkFrame):
         )
         self.dot = ctk.CTkFrame(self, width=8, height=8, corner_radius=4, fg_color=t.TEXT_FAINT)
         self.dot.pack(side="left", padx=(10, 6), pady=9)
-        self.text = ctk.CTkLabel(self, text="Stopped", font=typo.caption, text_color=t.TEXT_MUTED, height=20)
+        self.text = ctk.CTkLabel(self, text="Ready", font=typo.caption, text_color=t.TEXT_MUTED, height=20)
         self.text.pack(side="left", padx=(0, 10), pady=3)
 
     def set_running(self, running: bool) -> None:
@@ -211,7 +223,7 @@ class StatusBadge(ctk.CTkFrame):
         else:
             self.configure(fg_color=t.FIELD, border_color=t.BORDER)
             self.dot.configure(fg_color=t.TEXT_FAINT)
-            self.text.configure(text="Stopped", text_color=t.TEXT_MUTED)
+            self.text.configure(text="Ready", text_color=t.TEXT_MUTED)
 
 
 def icon_button(master, typo: Typography, glyph: str, fallback: str, command, width: int = 30) -> ctk.CTkButton:
@@ -234,6 +246,163 @@ def caption(master, typo: Typography, text: str = "", mono: bool = False, **kw) 
 
 def segmented_options(keys: Sequence[str], labels: Sequence[str]) -> Dict[str, str]:
     return dict(zip(keys, labels))
+
+
+class _TooltipHost:
+    """Zero-allocation shared tooltip host: one transient Toplevel only while hovered."""
+
+    def __init__(self) -> None:
+        self._tip: Optional[tk.Toplevel] = None
+        self._show_job: Optional[str] = None
+        self._show_root: Optional[tk.Misc] = None
+        self._active_widget: Optional[tk.Misc] = None
+
+    def _cancel_job(self) -> None:
+        if self._show_job is not None and self._show_root is not None:
+            try:
+                self._show_root.after_cancel(self._show_job)
+            except tk.TclError:
+                pass
+        self._show_job = None
+        self._show_root = None
+
+    def hide(self) -> None:
+        self._cancel_job()
+        self._active_widget = None
+        tip = self._tip
+        self._tip = None
+        if tip is not None:
+            try:
+                if tip.winfo_exists():
+                    tip.destroy()
+            except tk.TclError:
+                pass
+
+    def schedule(
+        self,
+        widget: tk.Misc,
+        text_or_fn: Union[str, Callable[[], str]],
+        delay_ms: int = 350,
+        font: Optional[tuple] = None,
+    ) -> None:
+        if self._active_widget is widget and (self._show_job is not None or self._tip is not None):
+            return
+        self.hide()
+        self._active_widget = widget
+        self._show_root = widget
+        try:
+            self._show_job = widget.after(
+                delay_ms, lambda: self._present(widget, text_or_fn, font=font)
+            )
+        except tk.TclError:
+            self._show_job = None
+
+    def _present(
+        self,
+        widget: tk.Misc,
+        text_or_fn: Union[str, Callable[[], str]],
+        font: Optional[tuple] = None,
+    ) -> None:
+        self._show_job = None
+        self._show_root = None
+        try:
+            if not widget.winfo_exists() or not widget.winfo_ismapped():
+                return
+            text = text_or_fn() if callable(text_or_fn) else text_or_fn
+            if not text:
+                return
+            mode_idx = 0 if ctk.get_appearance_mode() == "Light" else 1
+            bg = t.SURFACE[mode_idx]
+            border = t.BORDER_STRONG[mode_idx]
+            fg = t.TEXT[mode_idx]
+
+            tip = tk.Toplevel(widget)
+            tip.withdraw()
+            tip.overrideredirect(True)
+            try:
+                tip.attributes("-topmost", True)
+            except tk.TclError:
+                pass
+            frame = tk.Frame(
+                tip,
+                bg=bg,
+                highlightbackground=border,
+                highlightthickness=1,
+                bd=0,
+            )
+            frame.pack(fill="both", expand=True)
+            lbl_kw = {"font": font} if font is not None else (
+                {"font": ("Segoe UI", 9)} if t.IS_WINDOWS else {}
+            )
+            tk.Label(
+                frame,
+                text=text,
+                bg=bg,
+                fg=fg,
+                padx=8,
+                pady=4,
+                **lbl_kw,
+            ).pack()
+            tip.update_idletasks()
+
+            tw = tip.winfo_reqwidth()
+            th = tip.winfo_reqheight()
+            wx = widget.winfo_rootx() + (widget.winfo_width() - tw) // 2
+            wy = widget.winfo_rooty() + widget.winfo_height() + 6
+            bounds = virtual_screen_bounds()
+            if bounds is not None:
+                vl, vt, vw, vh = bounds
+            else:
+                vl, vt = 0, 0
+                vw, vh = tip.winfo_screenwidth(), tip.winfo_screenheight()
+            wx = max(vl + 8, min(wx, vl + vw - tw - 8))
+            if wy + th > vt + vh - 8:
+                wy = max(vt + 8, widget.winfo_rooty() - th - 6)
+            tip.geometry(f"+{wx}+{wy}")
+            tip.deiconify()
+            self._tip = tip
+        except tk.TclError:
+            self.hide()
+
+
+_TOOLTIP_HOST = _TooltipHost()
+
+
+def attach_tooltip(
+    widget: tk.Misc,
+    text: Union[str, Callable[[], str]],
+    delay_ms: int = 350,
+    font: Optional[tuple] = None,
+) -> None:
+    """Attach a shared, zero-idle-overhead hover tooltip to ``widget``."""
+    targets = [widget]
+    for child_attr in ("_canvas", "_text_label", "_image_label"):
+        child = getattr(widget, child_attr, None)
+        if child is not None and child not in targets:
+            targets.append(child)
+
+    def _on_enter(_event=None) -> None:
+        _TOOLTIP_HOST.schedule(widget, text, delay_ms=delay_ms, font=font)
+
+    def _on_leave(event=None) -> None:
+        if event is not None:
+            try:
+                rx, ry = event.x_root, event.y_root
+                wx, wy = widget.winfo_rootx(), widget.winfo_rooty()
+                if wx <= rx < wx + widget.winfo_width() and wy <= ry < wy + widget.winfo_height():
+                    return
+            except tk.TclError:
+                pass
+        _TOOLTIP_HOST.hide()
+
+    def _on_hide(_event=None) -> None:
+        _TOOLTIP_HOST.hide()
+
+    for target in targets:
+        target.bind("<Enter>", _on_enter, add="+")
+        target.bind("<Leave>", _on_leave, add="+")
+        target.bind("<ButtonPress>", _on_hide, add="+")
+    widget.bind("<Destroy>", _on_hide, add="+")
 
 
 class UpdateBanner(ctk.CTkFrame):

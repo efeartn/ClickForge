@@ -1,9 +1,9 @@
 """Deterministic generator for ClickForge brand and icon assets.
 
-Apple-inspired minimalist design language:
-- Deep obsidian-to-graphite vertical gradient squircle (#1C1C26 -> #0B0B10)
-  with a subtle top-lit specular border (#343448 -> #1E1E2A)
-- Soft radial ambient violet glow + concentric precision touch rings (#7C3AED / #A78BFA)
+Carbon & Precision Emerald design language:
+- Deep carbon-to-graphite vertical gradient squircle (#161920 -> #0A0B0E)
+  with a crisp top-lit neutral border (#303642 -> #1A1E26)
+- Soft radial ambient emerald glow + concentric precision touch rings (#10B981 / #34D399)
 - Iconic sculpted chevron pointer (#FFFFFF) with a deep inner notch and soft elevation shadow
 
 Outputs:
@@ -23,17 +23,17 @@ from PIL import Image, ImageDraw, ImageFilter
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ASSETS_DIR = os.path.join(ROOT_DIR, "assets")
 
-BG_TOP_RGB = (28, 28, 38)        # #1C1C26
-BG_BOT_RGB = (11, 11, 16)        # #0B0B10
-BORDER_RGBA = (52, 52, 72, 255)  # #343448
+BG_TOP_RGB = (22, 25, 32)        # #161920
+BG_BOT_RGB = (10, 11, 14)        # #0A0B0E
+BORDER_RGBA = (48, 54, 66, 255)  # #303642
 
-ACCENT_HEX = "#7C3AED"
-ACCENT_LIGHT_HEX = "#A78BFA"
+ACCENT_HEX = "#10B981"
+ACCENT_LIGHT_HEX = "#34D399"
 WHITE_HEX = "#FFFFFF"
 
-AMBIENT_GLOW_RGBA = (124, 58, 237, 52)
-OUTER_RING_RGBA = (124, 58, 237, 92)
-INNER_RING_RGBA = (139, 92, 246, 245)
+AMBIENT_GLOW_RGBA = (16, 185, 129, 54)
+OUTER_RING_RGBA = (16, 185, 129, 96)
+INNER_RING_RGBA = (52, 211, 153, 245)
 POINTER_RGBA = (255, 255, 255, 255)
 SHADOW_RGBA = (0, 0, 0, 175)
 
@@ -67,12 +67,12 @@ def generate_svg(path: str) -> None:
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
   <defs>
     <linearGradient id="bgGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#1C1C26"/>
-      <stop offset="100%" stop-color="#0B0B10"/>
+      <stop offset="0%" stop-color="#161920"/>
+      <stop offset="100%" stop-color="#0A0B0E"/>
     </linearGradient>
     <linearGradient id="borderGrad" x1="256" y1="24" x2="256" y2="488" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#3A3A50"/>
-      <stop offset="100%" stop-color="#1D1D28"/>
+      <stop offset="0%" stop-color="#303642"/>
+      <stop offset="100%" stop-color="#1A1E26"/>
     </linearGradient>
     <radialGradient id="ambientGlow" cx="186" cy="180" r="150" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="{ACCENT_HEX}" stop-opacity="0.28"/>

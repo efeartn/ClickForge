@@ -86,8 +86,8 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.2.1")
-        self.assertEqual(clickforge.__codename__, "Velocity")
+        self.assertEqual(clickforge.__version__, "3.3.0")
+        self.assertEqual(clickforge.__codename__, "Carbon")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
 
@@ -283,10 +283,43 @@ class TestClickSettingsAndEngine(unittest.TestCase):
         time.sleep(0.15)
         self.assertFalse(engine.is_active)
         self.assertGreaterEqual(engine.click_count, 5)
+        self.assertEqual(engine.target_count, 5)
+        self.assertGreater(engine.elapsed_seconds(), 0.0)
         self.assertIn("completed", stopped_events)
 
         engine.reset_counter()
         self.assertEqual(engine.click_count, 0)
+        self.assertEqual(engine.target_count, 0)
+        self.assertEqual(engine.elapsed_seconds(), 0.0)
+
+    def test_follow_cursor_position_jitter(self):
+        class _MoveTrackingBackend(DummyBackend):
+            def __init__(self):
+                super().__init__()
+                self.pos = (500, 400)
+                self.moves = []
+
+            def move(self, x: int, y: int) -> None:
+                self.moves.append((x, y))
+                self.pos = (x, y)
+
+        backend = _MoveTrackingBackend()
+        engine = ClickEngine(backend=backend)
+        settings = ClickSettings(
+            interval_ms=5.0,
+            repeat_count=4,
+            fixed_position=None,
+            humanize=True,
+            jitter_pct=0.0,
+            hold_min_ms=0.0,
+            hold_max_ms=0.0,
+            position_jitter_px=6,
+            corner_failsafe=False,
+        ).sanitized()
+        self.assertTrue(engine.start(settings))
+        time.sleep(0.12)
+        engine.stop(wait=True)
+        self.assertEqual(len(backend.moves), 4)
 
     def test_guaranteed_mouse_up(self):
         backend = DummyBackend()
@@ -526,7 +559,21 @@ class TestStartupUpdatePrompt(unittest.TestCase):
             self.assertEqual(app.speed_entry.get_text(), "10")
             self.assertEqual(app.unit_seg.get_key(), "ms")
             self.assertEqual(app._hotkeys.binding, "f6")
-            self.assertEqual(app.hotkey_btn.cget("text"), "[ F6 ]")
+            self.assertEqual(app.hotkey_btn.cget("text"), "F6")
+
+            # Adaptive layout hides inactive coordinate/humanizer/repeat sections by default
+            self.assertEqual(app.coords_row.winfo_manager(), "")
+            self.assertEqual(app.human_card.body.winfo_manager(), "")
+            self.assertEqual(app.repeat_count_entry.winfo_manager(), "")
+
+            app._on_position_mode_changed("fixed")
+            app._on_repeat_changed("fixed")
+            app.humanize_var.set(True)
+            app._on_humanize_toggled()
+            app.update()
+            self.assertEqual(app.coords_row.winfo_manager(), "pack")
+            self.assertEqual(app.human_card.body.winfo_manager(), "pack")
+            self.assertEqual(app.repeat_count_entry.winfo_manager(), "pack")
         finally:
             app._on_close()
 
