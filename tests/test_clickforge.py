@@ -434,20 +434,21 @@ class TestHotkeys(unittest.TestCase):
                 return k
 
         listener._kb = FakeKb()
-        listener._key_press(keyboard.Key.f6)
-        listener._key_release(keyboard.Key.f6)
-        listener._key_press(keyboard.KeyCode(vk=117))
-        listener._key_release(keyboard.KeyCode(vk=117))
-        self.assertEqual(len(pressed), 2)
-        self.assertEqual(len(released), 2)
+        with patch("clickforge.core.hotkeys.IS_WINDOWS", True):
+            listener._key_press(keyboard.Key.f6)
+            listener._key_release(keyboard.Key.f6)
+            listener._key_press(keyboard.KeyCode(vk=117))
+            listener._key_release(keyboard.KeyCode(vk=117))
+            self.assertEqual(len(pressed), 2)
+            self.assertEqual(len(released), 2)
 
-        listener._key_press(keyboard.Key.esc)
-        self.assertEqual(len(panicked), 1)
+            listener._key_press(keyboard.Key.esc)
+            self.assertEqual(len(panicked), 1)
 
-        listener.begin_recording()
-        listener._key_press(keyboard.Key.f6)
-        self.assertEqual(recorded, ["f6"])
-        self.assertEqual(listener.binding, "f6")
+            listener.begin_recording()
+            listener._key_press(keyboard.Key.f6)
+            self.assertEqual(recorded, ["f6"])
+            self.assertEqual(listener.binding, "f6")
 
     def test_key_name_does_not_collide_on_macos_and_linux(self):
         from pynput import keyboard
