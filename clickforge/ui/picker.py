@@ -12,7 +12,7 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Callable, Optional, Tuple
 
-from clickforge.core.system import IS_WINDOWS, virtual_screen_bounds
+from clickforge.core.system import virtual_screen_bounds
 from clickforge.ui.theme import Fonts
 
 
@@ -30,6 +30,11 @@ class CoordinatePicker:
         self._on_done = on_done
         self._finished = False
         self._top: Optional[tk.Toplevel] = None
+        self._parent_esc_id: Optional[str] = None
+
+    def cancel(self) -> None:
+        """Cancel coordinate picking programmatically (e.g. global Esc hotkey)."""
+        self._finish(None)
 
     def start(self) -> None:
         top = tk.Toplevel(self._parent)
@@ -43,8 +48,8 @@ class CoordinatePicker:
             left, top_y, width, height = bounds
         else:
             left, top_y = 0, 0
-            width = top.winfo_screenwidth()
-            height = top.winfo_screenheight()
+            width = max(top.winfo_screenwidth(), top.winfo_vrootwidth())
+            height = max(top.winfo_screenheight(), top.winfo_vrootheight())
 
         self._origin_x = left
         self._origin_y = top_y
@@ -105,15 +110,18 @@ class CoordinatePicker:
         top.bind("<Escape>", self._on_cancel)
         top.bind("<Return>", self._on_enter)
         top.protocol("WM_DELETE_WINDOW", self._on_cancel)
+        try:
+            self._parent_esc_id = self._parent.bind("<Escape>", self._on_cancel, add="+")
+        except tk.TclError:
+            self._parent_esc_id = None
 
         top.deiconify()
         top.lift()
         top.focus_force()
-        if IS_WINDOWS:
-            try:
-                top.grab_set()
-            except tk.TclError:
-                pass
+        try:
+            top.grab_set()
+        except tk.TclError:
+            pass
 
         # Position initial crosshair at current pointer location
         px = top.winfo_pointerx()
@@ -154,6 +162,12 @@ class CoordinatePicker:
         if self._finished:
             return
         self._finished = True
+        if self._parent_esc_id is not None:
+            try:
+                self._parent.unbind("<Escape>", self._parent_esc_id)
+            except tk.TclError:
+                pass
+            self._parent_esc_id = None
         if self._top is not None:
             try:
                 self._top.grab_release()

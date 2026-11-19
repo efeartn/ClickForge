@@ -2,6 +2,19 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.3.1] - 2026-11-19 — "Carbon"
+
+### Fixed
+- **macOS & Linux Hotkey KeyCode Collisions**: Resolved non-special `KeyCode` bindings via character before platform virtual-key numbers on macOS and Linux X11 in [hotkeys.py](clickforge/core/hotkeys.py), preventing keys like `-` (macOS `vk=27`) or `u` (X11 `vk=117`) from misfiring as Windows `Esc` or `F6`.
+- **macOS & Linux Release Bundle Packaging**: Updated `.github/workflows/build.yml` to package macOS `.app` bundles with `ditto --sequesterRsrc` and Linux bundles with `zip -ry` + `chmod +x`, preserving framework and shared library symlinks, and added CI frozen-binary `--smoke-test` validation on Windows, macOS, and Linux.
+- **macOS & Linux Picker, Screen Bounds, Audio & Backend**: Added CoreGraphics multi-monitor bounds on macOS, enabled desktop grabs and parent `<Escape>` + global panic cancellation in `CoordinatePicker`, extended macOS `afplay` timeout and added `canberra-gtk-play`/`paplay` cue playback on Linux, and overrode `PynputBackend.click()` to emit direct single clicks.
+- **Follow-Cursor Jitter Drift & Tooltip Auto-Hide**: Anchored follow-cursor Humanizer spread (`position_jitter_px`) to prevent Brownian cursor drift when stationary (re-anchoring smoothly when the user moves the pointer), and auto-hid tooltips after 6s or when losing window focus/mapping.
+- **Cross-Platform Header Polishing**: Guarded Windows-only `.ico` timers so macOS and Linux avoid unnecessary delayed callbacks.
+
+### Changed & Optimized
+- **Cross-Platform 2x Vector Header Icons**: Added [icons.py](clickforge/ui/icons.py) to render cached 4x-supersampled `14x14` (`@2x`) PIL/CTkImage icons for Sound, Theme, Pin, and Update across Windows, macOS, and Linux instead of falling back to wide text buttons off Windows.
+- **Live Speed Preview & Lower Idle Overhead**: Updated effective CPS / interval preview live while typing (`<KeyRelease>`), relaxed event polling from `20 ms` to `35 ms` when idle, and added lightweight `--version` and `--smoke-test` CLI switches.
+
 ## [3.3.0] - 2026-11-16 — "Carbon"
 
 ### Changed

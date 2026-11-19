@@ -86,9 +86,16 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.3.0")
+        self.assertEqual(clickforge.__version__, "3.3.1")
         self.assertEqual(clickforge.__codename__, "Carbon")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
+
+    def test_app_cli_smoke_test(self):
+        import clickforge.app as app_entry
+
+        self.assertEqual(app_entry.run_smoke_test(), 0)
+        self.assertEqual(app_entry.main(["--smoke-test"]), 0)
+        self.assertEqual(app_entry.main(["--version"]), 0)
 
 
 class TestConfig(unittest.TestCase):
@@ -321,6 +328,61 @@ class TestClickSettingsAndEngine(unittest.TestCase):
         engine.stop(wait=True)
         self.assertEqual(len(backend.moves), 4)
 
+    def test_follow_cursor_jitter_anchored_no_drift(self):
+        import math
+
+        class _CursorBackend(DummyBackend):
+            def __init__(self):
+                super().__init__()
+                self.pos = (500, 400)
+                self.moves = []
+
+            def move(self, x: int, y: int) -> None:
+                self.moves.append((x, y))
+                self.pos = (x, y)
+
+        backend = _CursorBackend()
+        engine = ClickEngine(backend=backend)
+        settings = ClickSettings(
+            interval_ms=2.0,
+            repeat_count=20,
+            fixed_position=None,
+            humanize=True,
+            jitter_pct=0.0,
+            hold_min_ms=0.0,
+            hold_max_ms=0.0,
+            position_jitter_px=4,
+            corner_failsafe=False,
+        ).sanitized()
+        self.assertTrue(engine.start(settings))
+        time.sleep(0.16)
+        engine.stop(wait=True)
+        self.assertEqual(len(backend.moves), 20)
+        for mx, my in backend.moves:
+            self.assertLessEqual(math.hypot(mx - 500, my - 400), 5.0)
+
+        # User physically moves the mouse -> engine re-anchors to new position
+        backend.pos = (800, 700)
+        engine = ClickEngine(backend=backend)
+        backend.moves.clear()
+        settings2 = ClickSettings(
+            interval_ms=2.0,
+            repeat_count=10,
+            fixed_position=None,
+            humanize=True,
+            jitter_pct=0.0,
+            hold_min_ms=0.0,
+            hold_max_ms=0.0,
+            position_jitter_px=4,
+            corner_failsafe=False,
+        ).sanitized()
+        self.assertTrue(engine.start(settings2))
+        time.sleep(0.12)
+        engine.stop(wait=True)
+        self.assertEqual(len(backend.moves), 10)
+        for mx, my in backend.moves:
+            self.assertLessEqual(math.hypot(mx - 800, my - 700), 5.0)
+
     def test_guaranteed_mouse_up(self):
         backend = DummyBackend()
         engine = ClickEngine(backend=backend)
@@ -386,6 +448,27 @@ class TestHotkeys(unittest.TestCase):
         listener._key_press(keyboard.Key.f6)
         self.assertEqual(recorded, ["f6"])
         self.assertEqual(listener.binding, "f6")
+
+    def test_key_name_does_not_collide_on_macos_and_linux(self):
+        from pynput import keyboard
+
+        listener = TriggerListener(
+            binding="f6",
+            on_press=lambda: None,
+            on_release=lambda: None,
+            on_panic=lambda: None,
+            on_recorded=lambda _k: None,
+        )
+        # On macOS (Carbon) and Linux (X11), KeyCode.vk overlaps Windows VK codes:
+        # e.g. '-' is macOS vk=27 (Win ESC), 'c' is macOS vk=8 (Win Backspace),
+        # and 'u' is X11 vk=117 (Win F6). Must resolve to char, not Windows key names.
+        self.assertEqual(listener._key_name(keyboard.KeyCode(char="-", vk=27), is_windows=False), "-")
+        self.assertEqual(listener._key_name(keyboard.KeyCode(char="c", vk=8), is_windows=False), "c")
+        self.assertEqual(listener._key_name(keyboard.KeyCode(char="u", vk=117), is_windows=False), "u")
+
+        # On Windows, VK table still resolves vk=117 -> 'f6' and vk=27 -> 'esc'
+        self.assertEqual(listener._key_name(keyboard.KeyCode(vk=117), is_windows=True), "f6")
+        self.assertEqual(listener._key_name(keyboard.KeyCode(vk=27), is_windows=True), "esc")
 
     def test_numeric_conflict(self):
         # Conflicting numeric characters and editing keys
@@ -619,6 +702,17 @@ class TestStartupUpdatePrompt(unittest.TestCase):
         self.assertFalse(observations.get("withdraw_flag"))
         self.assertEqual(observations.get("state"), "normal")
         self.assertTrue(observations.get("mapped"))
+
+    def test_vector_icons_render_all_states(self):
+        import customtkinter as ctk
+
+        from clickforge.ui.icons import ICON_NAMES, header_icon
+
+        for name in ICON_NAMES:
+            for active in (False, True):
+                img = header_icon(name, active=active)
+                self.assertIsInstance(img, ctk.CTkImage)
+                self.assertEqual(img.cget("size"), (14, 14))
 
 
 class TestInstaller(unittest.TestCase):

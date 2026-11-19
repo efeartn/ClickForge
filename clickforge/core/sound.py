@@ -10,35 +10,68 @@ zero latency impact on the input injection worker or UI thread.
 
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 import threading
+from typing import List, Optional
 
 IS_WINDOWS = sys.platform.startswith("win")
 IS_MAC = sys.platform == "darwin"
+
+_LINUX_SOUND_FILE = "/usr/share/sounds/freedesktop/stereo/message.oga"
+_LINUX_PLAYER: Optional[List[str]] = None
+_LINUX_PLAYER_CHECKED = False
+
+
+def _find_linux_player() -> Optional[List[str]]:
+    global _LINUX_PLAYER, _LINUX_PLAYER_CHECKED
+    if _LINUX_PLAYER_CHECKED:
+        return _LINUX_PLAYER
+    _LINUX_PLAYER_CHECKED = True
+    if shutil.which("canberra-gtk-play"):
+        _LINUX_PLAYER = ["canberra-gtk-play", "-i", "message"]
+    elif shutil.which("paplay") and os.path.isfile(_LINUX_SOUND_FILE):
+        _LINUX_PLAYER = ["paplay", _LINUX_SOUND_FILE]
+    return _LINUX_PLAYER
 
 
 def _play_worker(freq: int, duration_ms: int) -> None:
     if IS_WINDOWS:
         try:
             import winsound
+
             winsound.Beep(freq, duration_ms)
         except Exception:
             pass
     elif IS_MAC:
         try:
-            # Safe macOS system sound fallback
-            import subprocess
             sound_file = (
                 "/System/Library/Sounds/Tink.aiff"
                 if freq > 1000
                 else "/System/Library/Sounds/Pop.aiff"
             )
-            subprocess.run(["afplay", sound_file], timeout=0.2, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["afplay", sound_file],
+                timeout=1.5,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except Exception:
             pass
     else:
-        # Linux / other: silent or terminal bell fallback
-        pass
+        cmd = _find_linux_player()
+        if cmd:
+            try:
+                subprocess.run(
+                    cmd,
+                    timeout=1.5,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
 
 
 def play_cue(event: str, enabled: bool = True) -> None:

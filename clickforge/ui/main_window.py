@@ -44,16 +44,9 @@ from clickforge.core.validation import (
     to_interval_ms,
 )
 from clickforge.ui import theme as t
+from clickforge.ui.icons import header_icon
 from clickforge.ui.picker import CoordinatePicker
-from clickforge.ui.theme import (
-    GLYPH_PIN,
-    GLYPH_PINNED,
-    GLYPH_SOUND_OFF,
-    GLYPH_SOUND_ON,
-    GLYPH_THEME,
-    GLYPH_UPDATE,
-    resolve_fonts,
-)
+from clickforge.ui.theme import resolve_fonts
 from clickforge.ui.widgets import (
     Card,
     FormRow,
@@ -76,6 +69,8 @@ from clickforge.ui.widgets import (
 
 #: Event-queue drain rate.  Hotkey starts are handled within ~20 ms.
 POLL_INTERVAL_MS = 20
+#: Relaxed event-queue poll rate while completely idle.
+POLL_IDLE_MS = 35
 #: Telemetry repaints every N polls (3 x 20 ms = ~16 Hz).
 TELEMETRY_EVERY = 3
 #: Minimum logical window width; the height always fits the content.
@@ -119,7 +114,8 @@ class ClickForgeWindow(ctk.CTk):
         self._dialog_logo: Optional[ctk.CTkImage] = None
         self._apply_window_icon()
         # CustomTkinter schedules its own iconbitmap override at 200ms after __init__
-        self.after(240, self._apply_window_icon)
+        if IS_WINDOWS:
+            self.after(240, self._apply_window_icon)
 
         # Thread-safe event queue for worker & global hotkey threads
         self._events: "queue.SimpleQueue[Tuple[str, Any]]" = queue.SimpleQueue()
@@ -146,6 +142,7 @@ class ClickForgeWindow(ctk.CTk):
         self._last_valid_speed: float = 10.0
         self._recording_hotkey: bool = False
         self._picking_coords: bool = False
+        self._active_picker: Optional[CoordinatePicker] = None
         self._focused_entries: int = 0
         self._loading_ui: bool = False
         self._poll_tick: int = 0
@@ -178,7 +175,7 @@ class ClickForgeWindow(ctk.CTk):
         self.bind_all("<Button-1>", self._on_global_click, add="+")
 
         self._hotkeys.start()
-        self._poll_job = self.after(POLL_INTERVAL_MS, self._poll)
+        self._poll_job = self.after(POLL_IDLE_MS, self._poll)
         self._startup_warn_job = self.after(400, self._check_platform_warnings)
         self._startup_update_job = self.after(
             STARTUP_UPDATE_DELAY_MS, self._maybe_auto_check_updates
@@ -347,9 +344,10 @@ class ClickForgeWindow(ctk.CTk):
         self.update_btn = icon_button(
             hdr,
             typo,
-            glyph=GLYPH_UPDATE,
+            glyph="",
             fallback="Update",
             command=lambda: self._check_for_updates(manual=True),
+            image=header_icon("update", False),
         )
         self.update_btn.pack(side="right", padx=(6, 0))
         attach_tooltip(
@@ -367,9 +365,10 @@ class ClickForgeWindow(ctk.CTk):
         self.pin_btn = icon_button(
             hdr,
             typo,
-            glyph=GLYPH_PIN,
+            glyph="",
             fallback="Pin",
             command=self._toggle_always_on_top,
+            image=header_icon("pin_on" if self._always_on_top else "pin_off", self._always_on_top),
         )
         self.pin_btn.pack(side="right", padx=(6, 0))
         attach_tooltip(
@@ -377,12 +376,18 @@ class ClickForgeWindow(ctk.CTk):
             lambda: "Always on top: On" if self._always_on_top else "Always on top: Off",
         )
 
+        theme_icon = {
+            "System": "theme_system",
+            "Light": "theme_light",
+            "Dark": "theme_dark",
+        }.get(self._theme_mode, "theme_system")
         self.theme_btn = icon_button(
             hdr,
             typo,
-            glyph=GLYPH_THEME.get(self._theme_mode, GLYPH_THEME["System"]),
+            glyph="",
             fallback=self._theme_mode,
             command=self._cycle_theme,
+            image=header_icon(theme_icon, False),
         )
         self.theme_btn.pack(side="right", padx=(6, 0))
         attach_tooltip(
@@ -393,9 +398,10 @@ class ClickForgeWindow(ctk.CTk):
         self.sound_btn = icon_button(
             hdr,
             typo,
-            glyph=GLYPH_SOUND_ON if self._sound_cue else GLYPH_SOUND_OFF,
+            glyph="",
             fallback="Sound" if self._sound_cue else "Mute",
             command=self._toggle_sound_cue,
+            image=header_icon("sound_on" if self._sound_cue else "sound_off", self._sound_cue),
         )
         self.sound_btn.pack(side="right", padx=(6, 0))
         attach_tooltip(
@@ -497,6 +503,9 @@ class ClickForgeWindow(ctk.CTk):
         self.speed_row = FormRow(speed_card.body, typo, label="Interval")
         self.speed_entry = self._make_entry(
             self.speed_row.content, allow_float, width=78, on_commit=self._commit_speed
+        )
+        self.speed_entry.inner.bind(
+            "<KeyRelease>", lambda _e: self._update_speed_hint(), add="+"
         )
         self.speed_entry.pack(side="left", padx=(0, 6))
 
@@ -1096,8 +1105,9 @@ class ClickForgeWindow(ctk.CTk):
         self._config.set("theme", self._theme_mode)
         self._config.save()
         self._update_header_buttons()
-        # Re-assert custom window icon after CTk's titlebar color reset
-        self.after(150, self._apply_window_icon)
+        # Re-assert custom window icon after CTk's titlebar color reset on Windows
+        if IS_WINDOWS:
+            self.after(150, self._apply_window_icon)
 
     def _toggle_always_on_top(self) -> None:
         self._always_on_top = not self._always_on_top
@@ -1113,48 +1123,35 @@ class ClickForgeWindow(ctk.CTk):
         self._update_header_buttons()
 
     def _update_header_buttons(self) -> None:
-        has_glyphs = self._typo.fonts.icons is not None
         has_sound = self._sound_cue
         has_update = (
             self._update_release is not None
             and updater.is_newer(self._update_release.version)
         )
-        if has_glyphs:
-            self.sound_btn.configure(
-                text=GLYPH_SOUND_ON if has_sound else GLYPH_SOUND_OFF,
-                text_color=t.ACCENT if has_sound else t.TEXT_MUTED,
-                border_color=t.ACCENT if has_sound else t.BORDER,
-            )
-            self.theme_btn.configure(
-                text=GLYPH_THEME.get(self._theme_mode, GLYPH_THEME["System"])
-            )
-            self.pin_btn.configure(
-                text=GLYPH_PINNED if self._always_on_top else GLYPH_PIN,
-                text_color=t.ACCENT if self._always_on_top else t.TEXT_MUTED,
-                border_color=t.ACCENT if self._always_on_top else t.BORDER,
-            )
-            self.update_btn.configure(
-                text=GLYPH_UPDATE,
-                text_color=t.ACCENT if has_update else t.TEXT_MUTED,
-                border_color=t.ACCENT if has_update else t.BORDER,
-            )
-        else:
-            self.sound_btn.configure(
-                text="Sound" if has_sound else "Mute",
-                text_color=t.ACCENT if has_sound else t.TEXT_MUTED,
-                border_color=t.ACCENT if has_sound else t.BORDER,
-            )
-            self.theme_btn.configure(text=self._theme_mode)
-            self.pin_btn.configure(
-                text="Pinned" if self._always_on_top else "Pin",
-                text_color=t.ACCENT if self._always_on_top else t.TEXT_MUTED,
-                border_color=t.ACCENT if self._always_on_top else t.BORDER,
-            )
-            self.update_btn.configure(
-                text="Update",
-                text_color=t.ACCENT if has_update else t.TEXT_MUTED,
-                border_color=t.ACCENT if has_update else t.BORDER,
-            )
+        theme_icon = {
+            "System": "theme_system",
+            "Light": "theme_light",
+            "Dark": "theme_dark",
+        }.get(self._theme_mode, "theme_system")
+        self.sound_btn.configure(
+            text="",
+            image=header_icon("sound_on" if has_sound else "sound_off", has_sound),
+            border_color=t.ACCENT if has_sound else t.BORDER,
+        )
+        self.theme_btn.configure(
+            text="",
+            image=header_icon(theme_icon, False),
+        )
+        self.pin_btn.configure(
+            text="",
+            image=header_icon("pin_on" if self._always_on_top else "pin_off", self._always_on_top),
+            border_color=t.ACCENT if self._always_on_top else t.BORDER,
+        )
+        self.update_btn.configure(
+            text="",
+            image=header_icon("update", has_update),
+            border_color=t.ACCENT if has_update else t.BORDER,
+        )
 
     def _toggle_sound_cue(self) -> None:
         self._sound_cue = not self._sound_cue
@@ -1181,9 +1178,13 @@ class ClickForgeWindow(ctk.CTk):
         self._picking_coords = True
         self._sync_hotkey_suspension()
         self.pick_btn.configure(text="Picking...", fg_color=t.WARNING)
-        CoordinatePicker(self, self._fonts, on_done=self._on_coordinate_picked).start()
+        self._active_picker = CoordinatePicker(
+            self, self._fonts, on_done=self._on_coordinate_picked
+        )
+        self._active_picker.start()
 
     def _on_coordinate_picked(self, coords: Optional[Tuple[int, int]]) -> None:
+        self._active_picker = None
         self._picking_coords = False
         self._sync_hotkey_suspension()
         self.pick_btn.configure(text="Pick", fg_color=t.ACCENT)
@@ -1288,13 +1289,13 @@ class ClickForgeWindow(ctk.CTk):
                 pass
 
         # 2. Repaint telemetry (~16 Hz) only while running or until stopped state settles
-        self._poll_tick += 1
-        if self._poll_tick >= TELEMETRY_EVERY:
-            self._poll_tick = 0
-            active_run = self._engine.is_active
-            if active_run:
-                self._telemetry_settled = False
-            if active_run or not self._telemetry_settled:
+        active_run = self._engine.is_active
+        if active_run:
+            self._telemetry_settled = False
+        if active_run or not self._telemetry_settled:
+            self._poll_tick += 1
+            if (not active_run) or self._poll_tick >= TELEMETRY_EVERY:
+                self._poll_tick = 0
                 cps = self._engine.cps() if active_run else 0
                 cps_active = active_run and cps > 0
                 if self._shown_cps != (cps, cps_active):
@@ -1318,8 +1319,15 @@ class ClickForgeWindow(ctk.CTk):
                     self.elapsed_value_lbl.configure(text=elapsed_text)
                 if not active_run:
                     self._telemetry_settled = True
+        else:
+            self._poll_tick = 0
 
-        self._poll_job = self.after(POLL_INTERVAL_MS, self._poll)
+        delay = (
+            POLL_INTERVAL_MS
+            if (active_run or self._update_busy or self._setup_busy)
+            else POLL_IDLE_MS
+        )
+        self._poll_job = self.after(delay, self._poll)
 
     def _handle_event(self, kind: str, payload: Any) -> None:
         if kind == "trigger_press":
@@ -1332,6 +1340,8 @@ class ClickForgeWindow(ctk.CTk):
         elif kind in ("trigger_release", "panic", "stopped"):
             # The stop itself already happened on the listener/worker thread.
             self._telemetry_settled = False
+            if kind == "panic" and self._active_picker is not None:
+                self._active_picker.cancel()
             if kind in ("panic", "stopped"):
                 play_cue("stop", self._sound_cue)
             if kind == "stopped":
@@ -1962,6 +1972,8 @@ class ClickForgeWindow(ctk.CTk):
         self._poll_job = None
         self._startup_warn_job = None
         self._startup_update_job = None
+        if self._active_picker is not None:
+            self._active_picker.cancel()
         self._close_update_dialog()
         self._close_setup_dialog()
         if self._update_cancel is not None:

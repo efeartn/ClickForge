@@ -57,6 +57,18 @@ jobs:
       - name: Build executable with PyInstaller
         run: pyinstaller clickforge.spec --clean -y
 
+      - name: Smoke-test built binary
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            pwsh -NoProfile -Command '$p = Start-Process -FilePath "dist\ClickForge\ClickForge.exe" -ArgumentList "--smoke-test" -Wait -PassThru; exit $p.ExitCode'
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            dist/ClickForge.app/Contents/MacOS/ClickForge_Mac --smoke-test
+          else
+            chmod +x dist/ClickForge/ClickForge
+            xvfb-run -a dist/ClickForge/ClickForge --smoke-test
+          fi
+        shell: bash
+
       - name: Prepare Windows Artifact & Installer
         if: runner.os == 'Windows'
         shell: pwsh
@@ -79,13 +91,14 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.asset_name }} ClickForge.app
+          ditto -c -k --sequesterRsrc --keepParent ClickForge.app ../${{ matrix.asset_name }}
 
       - name: Prepare Linux Artifact
         if: runner.os == 'Linux'
         run: |
           cd dist/ClickForge
-          zip -r ../../${{ matrix.asset_name }} .
+          chmod +x ClickForge
+          zip -ry ../../${{ matrix.asset_name }} .
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

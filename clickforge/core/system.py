@@ -71,15 +71,60 @@ def prepare_process() -> None:
 
 def virtual_screen_bounds() -> Optional[Tuple[int, int, int, int]]:
     """``(left, top, width, height)`` of the whole multi-monitor desktop."""
-    if not IS_WINDOWS:
-        return None
-    import ctypes
+    if IS_WINDOWS:
+        import ctypes
 
-    gsm = ctypes.WinDLL("user32").GetSystemMetrics
-    w, h = gsm(78), gsm(79)
-    if w <= 0 or h <= 0:
-        return None
-    return gsm(76), gsm(77), w, h
+        gsm = ctypes.WinDLL("user32").GetSystemMetrics
+        w, h = gsm(78), gsm(79)
+        if w <= 0 or h <= 0:
+            return None
+        return gsm(76), gsm(77), w, h
+
+    if IS_MAC:
+        import ctypes
+
+        class _CGPoint(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+        class _CGSize(ctypes.Structure):
+            _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+        class _CGRect(ctypes.Structure):
+            _fields_ = [("origin", _CGPoint), ("size", _CGSize)]
+
+        try:
+            cg = ctypes.cdll.LoadLibrary(
+                "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"
+            )
+            cg.CGGetActiveDisplayList.argtypes = (
+                ctypes.c_uint32,
+                ctypes.POINTER(ctypes.c_uint32),
+                ctypes.POINTER(ctypes.c_uint32),
+            )
+            cg.CGGetActiveDisplayList.restype = ctypes.c_int32
+            cg.CGDisplayBounds.argtypes = (ctypes.c_uint32,)
+            cg.CGDisplayBounds.restype = _CGRect
+
+            count = ctypes.c_uint32(0)
+            if cg.CGGetActiveDisplayList(0, None, ctypes.byref(count)) != 0 or count.value == 0:
+                return None
+            displays = (ctypes.c_uint32 * count.value)()
+            if cg.CGGetActiveDisplayList(count.value, displays, ctypes.byref(count)) != 0:
+                return None
+            rects = [cg.CGDisplayBounds(displays[i]) for i in range(count.value)]
+            left = min(r.origin.x for r in rects)
+            top = min(r.origin.y for r in rects)
+            right = max(r.origin.x + r.size.width for r in rects)
+            bottom = max(r.origin.y + r.size.height for r in rects)
+            w = int(round(right - left))
+            h = int(round(bottom - top))
+            if w <= 0 or h <= 0:
+                return None
+            return int(round(left)), int(round(top)), w, h
+        except (OSError, AttributeError):
+            return None
+
+    return None
 
 
 def startup_warnings() -> List[str]:

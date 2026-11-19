@@ -92,11 +92,11 @@ ClickForge opens into a compact, adaptive desktop utility engineered for crisp r
 - **Windows `SendInput` Fast Path:** Pre-allocated `ctypes` `INPUT` structures avoid per-click allocation overhead, sustaining up to **`1,000 CPS`**.
 - **Sub-Millisecond Scheduler (`timing.py`):** Acquires `timeBeginPeriod(1)` only while clicking is active and pairs interruptible `Event.wait` with a light final spin (`1.5 ms` threshold).
 - **Thread-Safe Guaranteed Release:** Stopping mid-hold or closing during a run always emits `mouseUp` so mouse buttons never remain stuck.
-- **Humanizer in Every Mode:** Gaussian interval jitter (`± % σ`), triangular randomized hold duty (`ms`), and uniform disk coordinate **Spread (`± px`)** work in both **Follow Cursor** and **Fixed XY** modes.
+- **Humanizer in Every Mode:** Gaussian interval jitter (`± % σ`), triangular randomized hold duty (`ms`), and anchored disk coordinate **Spread (`± px`)** work in both **Follow Cursor** and **Fixed XY** modes without cursor drift.
 
 ### Live Run Telemetry & Auto-Updater
-- **Live Run Readout:** Displays rolling 1-second **LIVE CPS** (resetting immediately to `0` when stopped), **Total** clicks (`Total: X / Y` for fixed-repeat runs), **Elapsed** run timer (`MM:SS.d`), and schema-validated settings persisted per user via `platformdirs`.
-- **Header Quick Controls & Tooltips:** Hover tooltips on every header icon (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check, Windows **Setup** button, and version tag).
+- **Live Run Readout:** Displays rolling 1-second **LIVE CPS** (resetting immediately to `0` when stopped), **Total** clicks (`Total: X / Y` for fixed-repeat runs), **Elapsed** run timer (`MM:SS.d`), live interval/CPS preview while typing, and schema-validated settings persisted per user via `platformdirs`.
+- **Cross-Platform Header Icons & Tooltips:** Crisp 2x vector icons rendered cleanly on Windows, macOS, and Linux (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check) plus hover tooltips and a Windows **Setup** button.
 - **Automatic Startup Update Check:** Checks GitHub Releases on launch, previews `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and installs rollback-safe updates automatically on frozen Windows builds (opens the release page on macOS, Linux, or source runs).
 
 ---
@@ -146,7 +146,8 @@ ClickForge/
 │   │   ├── updater.py          # GitHub Releases updater with SHA-256 & rollback
 │   │   └── validation.py       # Numeric parsing and speed/unit conversions
 │   └── ui/
-│       ├── main_window.py      # Primary adaptive window & idle-skipped poll loop
+│       ├── icons.py            # Cached 4x-supersampled cross-platform vector header icons
+│       ├── main_window.py      # Primary adaptive window & idle-relaxed poll loop
 │       ├── picker.py           # Multi-monitor fixed XY coordinate picker overlay
 │       ├── theme.py            # Light/Dark Carbon & Precision Emerald palette tokens
 │       └── widgets.py          # Cards, pills, keycap button, shared tooltips, dialogs

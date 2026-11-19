@@ -226,8 +226,31 @@ class StatusBadge(ctk.CTkFrame):
             self.text.configure(text="Ready", text_color=t.TEXT_MUTED)
 
 
-def icon_button(master, typo: Typography, glyph: str, fallback: str, command, width: int = 30) -> ctk.CTkButton:
-    """Square header button using Fluent glyphs where available."""
+def icon_button(
+    master,
+    typo: Typography,
+    glyph: str,
+    fallback: str,
+    command,
+    width: int = 30,
+    image: Optional[ctk.CTkImage] = None,
+) -> ctk.CTkButton:
+    """Compact square header button preferring crisp vector CTkImage icons."""
+    if image is not None:
+        return ctk.CTkButton(
+            master,
+            text="",
+            image=image,
+            width=width,
+            height=t.CONTROL_H - 2,
+            corner_radius=t.RADIUS_SM,
+            border_width=1,
+            border_color=t.BORDER,
+            fg_color="transparent",
+            hover_color=t.HOVER,
+            text_color=t.TEXT_MUTED,
+            command=command,
+        )
     use_glyph = typo.fonts.icons is not None
     return ctk.CTkButton(
         master, text=glyph if use_glyph else fallback, width=width if use_glyph else 0,
@@ -255,6 +278,8 @@ class _TooltipHost:
         self._tip: Optional[tk.Toplevel] = None
         self._show_job: Optional[str] = None
         self._show_root: Optional[tk.Misc] = None
+        self._auto_hide_job: Optional[str] = None
+        self._auto_hide_root: Optional[tk.Misc] = None
         self._active_widget: Optional[tk.Misc] = None
 
     def _cancel_job(self) -> None:
@@ -266,8 +291,18 @@ class _TooltipHost:
         self._show_job = None
         self._show_root = None
 
+    def _cancel_auto_hide(self) -> None:
+        if self._auto_hide_job is not None and self._auto_hide_root is not None:
+            try:
+                self._auto_hide_root.after_cancel(self._auto_hide_job)
+            except tk.TclError:
+                pass
+        self._auto_hide_job = None
+        self._auto_hide_root = None
+
     def hide(self) -> None:
         self._cancel_job()
+        self._cancel_auto_hide()
         self._active_widget = None
         tip = self._tip
         self._tip = None
@@ -361,6 +396,16 @@ class _TooltipHost:
             tip.geometry(f"+{wx}+{wy}")
             tip.deiconify()
             self._tip = tip
+            self._auto_hide_root = tip
+            self._auto_hide_job = tip.after(6000, self.hide)
+            try:
+                top = widget.winfo_toplevel()
+                if not getattr(top, "_cf_tip_bound", False):
+                    top.bind("<FocusOut>", lambda _e: self.hide(), add="+")
+                    top.bind("<Unmap>", lambda _e: self.hide(), add="+")
+                    setattr(top, "_cf_tip_bound", True)
+            except tk.TclError:
+                pass
         except tk.TclError:
             self.hide()
 
@@ -537,7 +582,7 @@ class _ModalDialog(ctk.CTkToplevel):
             pass
 
         self._ico_job: Optional[str] = None
-        if ico_path and os.path.exists(ico_path):
+        if t.IS_WINDOWS and ico_path and os.path.exists(ico_path):
             def _apply_ico() -> None:
                 self._ico_job = None
                 if not self.winfo_exists():

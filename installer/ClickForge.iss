@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "3.3.0"
+  #define AppVersion "3.3.1"
 #endif
 
 #define AppName "ClickForge"

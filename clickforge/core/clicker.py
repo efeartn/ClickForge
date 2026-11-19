@@ -228,6 +228,8 @@ class ClickEngine:
         self._target_count = remaining
         self._run_start_perf = perf()
         self._last_elapsed = 0.0
+        jitter_anchor: Optional[Tuple[int, int]] = None
+        last_jitter_pos: Optional[Tuple[int, int]] = None
         reason = "stopped"
 
         try:
@@ -246,7 +248,12 @@ class ClickEngine:
                     elif s.humanize and s.position_jitter_px > 0:
                         cur = backend.position()
                         if cur is not None:
-                            jx, jy = self._jitter_point(cur[0], cur[1], s.position_jitter_px)
+                            if jitter_anchor is None or cur != last_jitter_pos:
+                                jitter_anchor = cur
+                            jx, jy = self._jitter_point(
+                                jitter_anchor[0], jitter_anchor[1], s.position_jitter_px
+                            )
+                            last_jitter_pos = (jx, jy)
                             backend.move(jx, jy)
 
                     for i in range(clicks_per_action):

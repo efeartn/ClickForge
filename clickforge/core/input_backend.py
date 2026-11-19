@@ -153,6 +153,10 @@ class PynputBackend(InputBackend):
         if self._mouse and button in self._buttons:
             self._mouse.release(self._buttons[button])
 
+    def click(self, button: str) -> None:
+        if self._mouse and button in self._buttons:
+            self._mouse.click(self._buttons[button], 1)
+
     def move(self, x: int, y: int) -> None:
         if self._mouse:
             self._mouse.position = (int(x), int(y))

@@ -13,8 +13,11 @@ active or a new binding is being recorded), so idle overhead stays at zero.
 from __future__ import annotations
 
 import re
+import sys
 import threading
 from typing import Any, Callable, Dict, Optional
+
+IS_WINDOWS = sys.platform.startswith("win")
 
 try:
     from pynput import keyboard, mouse
@@ -237,7 +240,9 @@ class TriggerListener:
                 self._mouse.stop()
                 self._mouse = None
 
-    def _key_name(self, key: Any) -> Optional[str]:
+    def _key_name(
+        self, key: Any, *, is_windows: Optional[bool] = None
+    ) -> Optional[str]:
         # Check Key enum BEFORE canonical(): on Windows, pynput's canonical(Key.f6)
         # strips Key.f6 down to KeyCode(vk=117), breaking "f6" and "esc" matches.
         if keyboard is not None and isinstance(key, keyboard.Key):
@@ -250,10 +255,19 @@ class TriggerListener:
         if keyboard is not None and isinstance(key, keyboard.Key):
             return key.name
         if keyboard is not None and isinstance(key, keyboard.KeyCode):
-            if key.vk is not None and key.vk in _VK_TO_NAME:
-                return _VK_TO_NAME[key.vk]
-            if key.char and len(key.char) == 1 and key.char.isprintable() and key.char != " ":
-                return key.char.lower()
+            win = IS_WINDOWS if is_windows is None else is_windows
+            ch = key.char
+            has_char = bool(ch and len(ch) == 1 and ch.isprintable() and ch != " ")
+            if win:
+                if key.vk is not None and key.vk in _VK_TO_NAME:
+                    return _VK_TO_NAME[key.vk]
+                if has_char:
+                    return ch.lower()
+            else:
+                # macOS/X11 KeyCode.vk values overlap Windows VK numbers (e.g.
+                # macOS '-' is vk=27, X11 'u' is vk=117), so prefer char first.
+                if has_char:
+                    return ch.lower()
             if key.vk is not None:
                 return f"vk{key.vk}"
         return None
