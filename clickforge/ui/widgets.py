@@ -119,6 +119,7 @@ class NumberEntry(ctk.CTkEntry):
         vcmd = (self.register(lambda proposed: allow(proposed)), "%P")
         self._entry.configure(validate="key", validatecommand=vcmd)
         self._enabled = True
+        self._flash_job: Optional[str] = None
         self._entry.bind("<FocusIn>", lambda e: self._focus(True), add="+")
         self._entry.bind("<FocusOut>", lambda e: self._focus(False), add="+")
 
@@ -143,16 +144,34 @@ class NumberEntry(ctk.CTkEntry):
             self.configure(state="disabled")
 
     def flash_error(self) -> None:
+        if self._flash_job is not None:
+            try:
+                self.after_cancel(self._flash_job)
+            except tk.TclError:
+                pass
+            self._flash_job = None
         self.configure(border_color=t.DANGER)
 
         def restore() -> None:
+            self._flash_job = None
             try:
+                if not self.winfo_exists():
+                    return
                 focused = self.focus_get() == self._entry
+                self._focus(focused)
             except (KeyError, tk.TclError):
-                focused = False
-            self._focus(focused)
+                pass
 
-        self.after(900, restore)
+        self._flash_job = self.after(900, restore)
+
+    def destroy(self) -> None:
+        if self._flash_job is not None:
+            try:
+                self.after_cancel(self._flash_job)
+            except tk.TclError:
+                pass
+            self._flash_job = None
+        super().destroy()
 
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = enabled
@@ -464,9 +483,12 @@ class UpdateBanner(ctk.CTkFrame):
         )
         self._typo = typo
         body = ctk.CTkFrame(self, fg_color="transparent")
-        body.pack(fill="x", padx=12, pady=10)
+        body.pack(fill="x", padx=14, pady=10)
 
-        text_col = ctk.CTkFrame(body, fg_color="transparent")
+        top_row = ctk.CTkFrame(body, fg_color="transparent")
+        top_row.pack(fill="x")
+
+        text_col = ctk.CTkFrame(top_row, fg_color="transparent")
         text_col.pack(side="left", fill="x", expand=True)
         self.title = ctk.CTkLabel(
             text_col, text="", font=typo.body_strong, text_color=t.TEXT, anchor="w", height=18,
@@ -474,7 +496,7 @@ class UpdateBanner(ctk.CTkFrame):
         self.title.pack(fill="x")
         self.detail = ctk.CTkLabel(
             text_col, text="", font=typo.caption, text_color=t.TEXT_MUTED, anchor="w",
-            height=16, justify="left", wraplength=210,
+            height=16, justify="left", wraplength=410,
         )
         self.detail.pack(fill="x")
         self.progress = ctk.CTkProgressBar(
@@ -482,8 +504,8 @@ class UpdateBanner(ctk.CTkFrame):
         )
         self.progress.set(0)
 
-        self._actions = ctk.CTkFrame(body, fg_color="transparent")
-        self._actions.pack(side="right", padx=(8, 0))
+        self._inline_actions = ctk.CTkFrame(top_row, fg_color="transparent")
+        self._bottom_actions = ctk.CTkFrame(body, fg_color="transparent")
         self._buttons: list = []
 
     def show_message(
@@ -495,14 +517,14 @@ class UpdateBanner(ctk.CTkFrame):
         tone: str = "accent",
     ) -> None:
         """``actions`` is a sequence of ``(label, callback, primary)`` tuples."""
-        border = {"accent": t.ACCENT, "danger": t.DANGER, "neutral": t.BORDER}.get(tone, t.ACCENT)
+        border = {"accent": t.ACCENT, "danger": t.DANGER, "neutral": t.BORDER_STRONG}.get(tone, t.ACCENT)
         self.configure(border_color=border)
         self.title.configure(text=title)
         self.detail.configure(text=detail)
         self.detail.pack_forget()
         self.progress.pack_forget()
         if detail:
-            self.detail.pack(fill="x")
+            self.detail.pack(fill="x", pady=(2, 0))
         if progress is not None:
             self.progress.set(max(0.0, min(1.0, progress)))
             self.progress.pack(fill="x", pady=(6, 0))
@@ -510,17 +532,39 @@ class UpdateBanner(ctk.CTkFrame):
         for b in self._buttons:
             b.destroy()
         self._buttons = []
-        for label, callback, primary in actions:
-            if primary:
-                btn = accent_button(
-                    self._actions, self._typo, label, callback,
-                    width=0, height=26, font=self._typo.label,
-                )
+        self._inline_actions.pack_forget()
+        self._bottom_actions.pack_forget()
+
+        inline = len(actions) == 1 and len(str(actions[0][0])) <= 10
+        if actions:
+            if inline:
+                self._inline_actions.pack(side="right", padx=(10, 0))
+                self.detail.configure(wraplength=310)
+                host = self._inline_actions
+                btn_h = 26
             else:
-                btn = ghost_button(self._actions, self._typo, label, callback, width=0)
-                btn.configure(height=26)
-            btn.pack(side="left", padx=(6, 0))
-            self._buttons.append(btn)
+                self._bottom_actions.pack(fill="x", pady=(6, 0))
+                self.detail.configure(wraplength=410)
+                host = self._bottom_actions
+                btn_h = 26
+
+            for idx, (label, callback, primary) in enumerate(actions):
+                if primary:
+                    btn = accent_button(
+                        host, self._typo, label, callback,
+                        width=0, height=btn_h, font=self._typo.label,
+                    )
+                else:
+                    btn = ghost_button(host, self._typo, label, callback, width=0)
+                    btn.configure(height=btn_h)
+                if inline:
+                    btn.pack(side="left", padx=(6, 0))
+                else:
+                    # First action (primary) packs rightmost; subsequent actions sit to its left.
+                    btn.pack(side="right", padx=(0, 0 if idx == 0 else 8))
+                self._buttons.append(btn)
+        else:
+            self.detail.configure(wraplength=410)
 
     def set_progress(self, fraction: float, detail: str) -> None:
         self.progress.set(max(0.0, min(1.0, fraction)))

@@ -96,7 +96,7 @@ ClickForge opens into a compact, adaptive desktop utility engineered for crisp r
 
 ### Live Run Telemetry & Auto-Updater
 - **Live Run Readout:** Displays rolling 1-second **LIVE CPS** (resetting immediately to `0` when stopped), **Total** clicks (`Total: X / Y` for fixed-repeat runs), **Elapsed** run timer (`MM:SS.d`), live interval/CPS preview while typing, and schema-validated settings persisted per user via `platformdirs`.
-- **Cross-Platform Header Icons & Tooltips:** Crisp 2x vector icons rendered cleanly on Windows, macOS, and Linux (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check) plus hover tooltips and a Windows **Setup** button.
+- **Cross-Platform Header Icons & Tooltips:** Crisp 2x vector icons rendered cleanly on Windows, macOS, and Linux (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check) plus hover tooltips across header controls, **Reset**, **Pick**, and **Hotkey**, and a Windows **Setup** button.
 - **Automatic Startup Update Check:** Checks GitHub Releases on launch, previews `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and installs rollback-safe updates automatically on frozen Windows builds (opens the release page on macOS, Linux, or source runs).
 
 ---

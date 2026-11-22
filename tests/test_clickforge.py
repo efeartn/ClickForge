@@ -86,7 +86,7 @@ class DummyBackend(InputBackend):
 class TestMetadata(unittest.TestCase):
     def test_version_format(self):
         self.assertRegex(clickforge.__version__, r"^\d+\.\d+\.\d+$")
-        self.assertEqual(clickforge.__version__, "3.3.1")
+        self.assertEqual(clickforge.__version__, "3.3.2")
         self.assertEqual(clickforge.__codename__, "Carbon")
         self.assertEqual(clickforge.__app_name__, "ClickForge")
 
@@ -498,7 +498,18 @@ class TestAudioCue(unittest.TestCase):
 class TestThemeTokens(unittest.TestCase):
     def test_colors_are_hex_tuples(self):
         hex_pattern = re.compile(r"^#[0-9A-Fa-f]{6}$")
-        for token_name in ("BG", "SURFACE", "FIELD", "BORDER", "ACCENT", "DANGER", "SUCCESS"):
+        for token_name in (
+            "BG",
+            "SURFACE",
+            "FIELD",
+            "BORDER",
+            "ACCENT",
+            "DANGER",
+            "SUCCESS",
+            "SWITCH_TRACK",
+            "SWITCH_THUMB",
+            "SWITCH_THUMB_HOVER",
+        ):
             token = getattr(t, token_name)
             self.assertIsInstance(token, tuple, f"Token {token_name} must be a tuple")
             self.assertEqual(len(token), 2, f"Token {token_name} must have 2 elements (light, dark)")
@@ -714,6 +725,56 @@ class TestStartupUpdatePrompt(unittest.TestCase):
                 img = header_icon(name, active=active)
                 self.assertIsInstance(img, ctk.CTkImage)
                 self.assertEqual(img.cget("size"), (14, 14))
+
+    def test_restart_and_update_button_closes_window_cleanly_in_mainloop(self):
+        # Regression: cancelling root `after info` timers during _on_close corrupted
+        # child CTkButton._tclCommands inside CTkButton._on_release, breaking shutdown
+        # after destroying the header and leaving the app open with a dead upper UI.
+        with (
+            patch("clickforge.core.hotkeys.TriggerListener.start"),
+            patch("clickforge.ui.main_window.startup_warnings", return_value=[]),
+            patch("clickforge.core.updater.launch_installer") as mock_launch,
+        ):
+            app = ClickForgeWindow(config=self.cfg)
+            for attr in ("_startup_update_job", "_startup_warn_job"):
+                job = getattr(app, attr, None)
+                if job is not None:
+                    app.after_cancel(job)
+                    setattr(app, attr, None)
+
+            state = {"timed_out": False, "released_ok": False}
+
+            def _trigger_ready():
+                app._on_update_ready((self.tmp_dir, self.tmp_dir, self.newer))
+                app.after(60, _click_restart)
+
+            def _click_restart():
+                target_btn = next(
+                    (b for b in app.update_banner._buttons if b.cget("text") == "Restart & Update"),
+                    None,
+                )
+                self.assertIsNotNone(target_btn)
+                target_btn._mouse_inside = True
+                target_btn._on_release()
+                state["released_ok"] = True
+
+            def _failsafe_timeout():
+                state["timed_out"] = True
+                app._on_close()
+
+            app.after(120, _trigger_ready)
+            app.after(2000, _failsafe_timeout)
+            app.mainloop()
+
+        self.assertTrue(state["released_ok"])
+        self.assertFalse(state["timed_out"])
+        mock_launch.assert_called_once()
+
+    def test_number_entry_flash_error_safe_after_destroy(self):
+        app = self._make_window()
+        app.speed_entry.flash_error()
+        self.assertIsNotNone(app.speed_entry._flash_job)
+        app._on_close()
 
 
 class TestInstaller(unittest.TestCase):

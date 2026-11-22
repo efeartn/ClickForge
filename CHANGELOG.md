@@ -2,6 +2,16 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [3.3.2] - 2026-11-22 — "Carbon"
+
+### Fixed
+- **In-App Update Restart / Partial Destroy Bug (`Restart & Update`)**: Removed unsafe root `self.after_cancel(...)` iteration during `_on_close()` that removed child widgets' Tcl commands behind CustomTkinter's back (`_tclCommands`), which had caused `Tk.destroy()` to throw `TclError: can't delete Tcl command` halfway through shutdown—destroying the upper header UI while leaving the window open. Added re-entrancy guards, deferred `_on_close()` cleanly outside `CTkButton._on_release`, added Tcl-level timer cleanup in `_on_close()`, and added retry resilience to the Windows updater script (`_INSTALLER_CMD`).
+- **`NumberEntry.flash_error()` Lifecycle Safety**: Tracked active error-flash timer IDs, checked widget existence before refocusing, and cancelled pending timers in `NumberEntry.destroy()`.
+
+### Changed & Polished
+- **Update Banner Action Layout**: Stacked longer/multi-button update banners (`Restart & Update`, `Later`) cleanly with a right-aligned bottom button bar (`[Later] [Restart & Update]`) so titles and messages never wrap into tight columns.
+- **Light Mode Switch Contrast & Telemetry Polish**: Added explicit `SWITCH_TRACK` / `SWITCH_THUMB` / `SWITCH_THUMB_HOVER` palette tokens in [theme.py](clickforge/ui/theme.py), formatted duration concisely (`· MM:SS.d`), highlighted the telemetry card border in emerald while clicking is active, and added hover tooltips to `Reset`, `Pick`, and `Hotkey`.
+
 ## [3.3.1] - 2026-11-19 — "Carbon"
 
 ### Fixed

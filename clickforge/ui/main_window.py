@@ -112,10 +112,12 @@ class ClickForgeWindow(ctk.CTk):
         self._icon_photo: Optional[ImageTk.PhotoImage] = None
         self._header_logo: Optional[ctk.CTkImage] = None
         self._dialog_logo: Optional[ctk.CTkImage] = None
+        self._icon_job: Optional[str] = None
+        self._closing: bool = False
         self._apply_window_icon()
         # CustomTkinter schedules its own iconbitmap override at 200ms after __init__
         if IS_WINDOWS:
-            self.after(240, self._apply_window_icon)
+            self._schedule_window_icon(240)
 
         # Thread-safe event queue for worker & global hotkey threads
         self._events: "queue.SimpleQueue[Tuple[str, Any]]" = queue.SimpleQueue()
@@ -157,6 +159,7 @@ class ClickForgeWindow(ctk.CTk):
         self._staged_update: Optional[Tuple[str, str, updater.ReleaseInfo]] = None
         self._update_busy: bool = False
         self._setup_busy: bool = False
+        self._applying_update: bool = False
         self._update_cancel: Optional[threading.Event] = None
         self._update_hide_job: Optional[str] = None
         self._update_dialog: Optional[UpdatePromptDialog] = None
@@ -164,7 +167,6 @@ class ClickForgeWindow(ctk.CTk):
         self._poll_job: Optional[str] = None
         self._startup_warn_job: Optional[str] = None
         self._startup_update_job: Optional[str] = None
-        self._closing: bool = False
 
         self._build_ui()
         self._load_from_config()
@@ -260,7 +262,24 @@ class ClickForgeWindow(ctk.CTk):
                     return None
         return self._dialog_logo
 
+    def _schedule_window_icon(self, delay_ms: int) -> None:
+        if self._icon_job is not None:
+            try:
+                self.after_cancel(self._icon_job)
+            except tk.TclError:
+                pass
+            self._icon_job = None
+        if self._closing:
+            return
+        try:
+            self._icon_job = self.after(delay_ms, self._apply_window_icon)
+        except tk.TclError:
+            self._icon_job = None
+
     def _apply_window_icon(self) -> None:
+        self._icon_job = None
+        if self._closing or not self.winfo_exists():
+            return
         ico_path = resource_path("assets", "icon.ico")
         has_ico = os.path.exists(ico_path)
         if has_ico:
@@ -458,19 +477,21 @@ class ClickForgeWindow(ctk.CTk):
         self.total_value_lbl.pack(side="left")
         self.elapsed_value_lbl = ctk.CTkLabel(
             meta_stats,
-            text="Elapsed: 00:00.0",
+            text="· 00:00.0",
             font=typo.mono_small,
             text_color=t.TEXT_FAINT,
             anchor="w",
             height=16,
         )
-        self.elapsed_value_lbl.pack(side="left", padx=(12, 0))
+        self.elapsed_value_lbl.pack(side="left", padx=(8, 0))
+        attach_tooltip(self.elapsed_value_lbl, "Elapsed run duration")
 
         # Right: Reset button
         self.reset_btn = ghost_button(
             tel_top, typo, text="Reset", command=self._reset_counters, width=62
         )
         self.reset_btn.pack(side="right")
+        attach_tooltip(self.reset_btn, "Reset click counter and timer")
 
         ctk.CTkFrame(
             telemetry_card.body, height=1, fg_color=t.BORDER, corner_radius=0
@@ -600,7 +621,7 @@ class ClickForgeWindow(ctk.CTk):
         )
         self.pos_y_entry.pack(side="left", padx=(2, 8))
 
-        # High-contrast Pick button (white bold text on #7C3AED violet)
+        # Target screen coordinate picker
         self.pick_btn = accent_button(
             self.coords_row.content,
             typo,
@@ -609,6 +630,10 @@ class ClickForgeWindow(ctk.CTk):
             width=68,
         )
         self.pick_btn.pack(side="right", fill="x", expand=True)
+        attach_tooltip(
+            self.pick_btn,
+            "Pick target screen coordinates (Esc or right-click to cancel)",
+        )
 
         # 5. Humanizer (Anti-Pattern Randomization) Card
         human_card = Card(self, typo, title="Humanizer")
@@ -622,10 +647,10 @@ class ClickForgeWindow(ctk.CTk):
             variable=self.humanize_var,
             font=typo.caption,
             text_color=t.TEXT_MUTED,
-            fg_color=t.BORDER_STRONG,
+            fg_color=t.SWITCH_TRACK,
             progress_color=t.ACCENT,
-            button_color=t.TEXT_ON_ACCENT,
-            button_hover_color=t.TEXT,
+            button_color=t.SWITCH_THUMB,
+            button_hover_color=t.SWITCH_THUMB_HOVER,
             width=36,
             switch_width=34,
             switch_height=18,
@@ -749,6 +774,9 @@ class ClickForgeWindow(ctk.CTk):
             width=120,
         )
         self.hotkey_btn.pack(side="right", fill="x", expand=True)
+        attach_tooltip(
+            self.hotkey_btn, "Click to bind a keyboard key or Mouse4 / Mouse5"
+        )
 
         # Primary Start / Stop Button
         self.start_btn = accent_button(
@@ -1023,6 +1051,7 @@ class ClickForgeWindow(ctk.CTk):
 
         # Status badge & primary Start/Stop button
         self.status_badge.set_running(running)
+        self.telemetry_card.configure(border_color=t.ACCENT if running else t.BORDER)
         if not running and self._shown_cps != (0, False):
             self._shown_cps = (0, False)
             self.cps_value_lbl.configure(text="0", text_color=t.TEXT)
@@ -1107,7 +1136,7 @@ class ClickForgeWindow(ctk.CTk):
         self._update_header_buttons()
         # Re-assert custom window icon after CTk's titlebar color reset on Windows
         if IS_WINDOWS:
-            self.after(150, self._apply_window_icon)
+            self._schedule_window_icon(150)
 
     def _toggle_always_on_top(self) -> None:
         self._always_on_top = not self._always_on_top
@@ -1165,10 +1194,10 @@ class ClickForgeWindow(ctk.CTk):
         self._engine.reset_counter()
         self._shown_cps = (0, False)
         self._shown_total = (0, 0)
-        self._shown_elapsed = "Elapsed: 00:00.0"
+        self._shown_elapsed = "· 00:00.0"
         self.cps_value_lbl.configure(text="0", text_color=t.TEXT)
         self.total_value_lbl.configure(text="Total: 0")
-        self.elapsed_value_lbl.configure(text="Elapsed: 00:00.0")
+        self.elapsed_value_lbl.configure(text="· 00:00.0")
 
     # ── Coordinate Picker & Hotkey Recording ─────────────────────────
 
@@ -1313,7 +1342,7 @@ class ClickForgeWindow(ctk.CTk):
                         else f"Total: {total:,}"
                     )
                     self.total_value_lbl.configure(text=total_text)
-                elapsed_text = f"Elapsed: {_fmt_elapsed(self._engine.elapsed_seconds())}"
+                elapsed_text = f"· {_fmt_elapsed(self._engine.elapsed_seconds())}"
                 if self._shown_elapsed != elapsed_text:
                     self._shown_elapsed = elapsed_text
                     self.elapsed_value_lbl.configure(text=elapsed_text)
@@ -1627,7 +1656,7 @@ class ClickForgeWindow(ctk.CTk):
         except Exception as exc:
             self._on_setup_error(str(exc))
             return
-        self._on_close()
+        self.after(10, self._on_close)
 
     def _on_setup_error(self, message: str) -> None:
         self._setup_busy = False
@@ -1923,17 +1952,24 @@ class ClickForgeWindow(ctk.CTk):
         )
 
     def _apply_staged_update(self) -> None:
-        if self._staged_update is None:
+        if self._applying_update or self._staged_update is None:
             return
+        self._applying_update = True
         if self._engine.is_active:
             self._stop_clicking()
         staged, workdir, _release = self._staged_update
         try:
             updater.launch_installer(staged, workdir)
         except updater.UpdateError as exc:
+            self._applying_update = False
             self._on_update_error((str(exc), True))
             return
-        self._on_close()
+        self._show_banner(
+            title="Restarting to install update...",
+            detail="Closing ClickForge",
+            tone="accent",
+        )
+        self.after(10, self._on_close)
 
     def _on_update_error(self, payload: Tuple[str, bool]) -> None:
         msg, show_ui = payload
@@ -1961,17 +1997,18 @@ class ClickForgeWindow(ctk.CTk):
         )
 
     def _on_close(self) -> None:
+        if self._closing:
+            return
         self._closing = True
         self._cancel_banner_timer()
-        for job in (self._poll_job, self._startup_warn_job, self._startup_update_job):
+        for attr in ("_poll_job", "_startup_warn_job", "_startup_update_job", "_icon_job"):
+            job = getattr(self, attr, None)
             if job is not None:
                 try:
                     self.after_cancel(job)
                 except tk.TclError:
                     pass
-        self._poll_job = None
-        self._startup_warn_job = None
-        self._startup_update_job = None
+                setattr(self, attr, None)
         if self._active_picker is not None:
             self._active_picker.cancel()
         self._close_update_dialog()
@@ -1985,8 +2022,24 @@ class ClickForgeWindow(ctk.CTk):
         self._hotkeys.stop()
         self._engine.stop(wait=True, timeout=0.8)
         try:
-            for after_id in self.tk.splitlist(self.tk.call("after", "info")):
-                self.after_cancel(after_id)
+            self.quit()
         except tk.TclError:
             pass
-        self.destroy()
+        # Cancel any leftover widget timers at the Tcl level without calling
+        # self.after_cancel(), which deletes child Tcl commands prematurely and
+        # desynchronizes CustomTkinter's _tclCommands during destroy().
+        try:
+            for after_id in self.tk.splitlist(self.tk.call("after", "info")):
+                try:
+                    self.tk.call("after", "cancel", after_id)
+                except tk.TclError:
+                    pass
+        except tk.TclError:
+            pass
+        try:
+            self.destroy()
+        except tk.TclError:
+            try:
+                self.tk.call("destroy", self._w)
+            except tk.TclError:
+                pass

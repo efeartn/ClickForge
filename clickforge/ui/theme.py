@@ -22,6 +22,9 @@ BORDER_STRONG = ("#C8CDD6", "#303642")
 HOVER = ("#E4E7EC", "#1D2026")
 SEG_SELECTED = ("#FFFFFF", "#262B35")
 SEG_SELECTED_HOVER = ("#F9FAFB", "#2E3440")
+SWITCH_TRACK = ("#C2C8D1", "#2B313C")
+SWITCH_THUMB = ("#FFFFFF", "#F3F4F6")
+SWITCH_THUMB_HOVER = ("#F8FAFC", "#FFFFFF")
 
 # ── Text ─────────────────────────────────────────────────────────────
 TEXT = ("#111318", "#ECEDEF")

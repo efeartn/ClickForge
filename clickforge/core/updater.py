@@ -352,8 +352,17 @@ goto wait
 :swap
 echo Replacing files in %CF_DST% >> "%LOG%"
 if exist "%CF_DST%\_internal.cfbak" rmdir /s /q "%CF_DST%\_internal.cfbak"
+set /a MOVE_TRIES=0
+
+:move_internal
 move "%CF_DST%\_internal" "%CF_DST%\_internal.cfbak" >> "%LOG%" 2>&1
-if errorlevel 1 goto give_up
+if not errorlevel 1 goto copy_exe_bak
+set /a MOVE_TRIES+=1
+if %MOVE_TRIES% GEQ 6 goto give_up
+ping -n 2 127.0.0.1 >nul
+goto move_internal
+
+:copy_exe_bak
 copy /y "%CF_DST%\%CF_EXE%" "%CF_DST%\%CF_EXE%.cfbak" >> "%LOG%" 2>&1
 robocopy "%CF_SRC%\_internal" "%CF_DST%\_internal" /E /R:5 /W:1 /NFL /NDL /NJH /NJS /NP >> "%LOG%" 2>&1
 if errorlevel 8 goto rollback
