@@ -397,14 +397,32 @@ $exeName = $env:CF_EXE
 $workDir = $env:CF_WORK
 $newVer = $env:CF_VER
 $noRelaunch = ($env:CF_NO_RELAUNCH -eq '1')
-$log = Join-Path $workDir 'update.log'
+$log = [System.IO.Path]::Combine($workDir, 'update.log')
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Log([string]$msg) {
     $ts = (Get-Date).ToString('HH:mm:ss.fff')
-    Add-Content -LiteralPath $log -Value "[$ts] $msg" -Encoding ASCII
+    try {
+        [System.IO.File]::AppendAllText($log, "[$ts] $msg`r`n", $utf8NoBom)
+    } catch {}
 }
 
-Set-Content -LiteralPath $log -Value 'ClickForge updater started' -Encoding ASCII
+function Get-Sha256Hex([string]$filePath) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($filePath)
+        try {
+            $hash = $sha.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hash)).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $stream.Dispose()
+        }
+    } finally {
+        $sha.Dispose()
+    }
+}
+
+[System.IO.File]::WriteAllText($log, "ClickForge updater started`r`n", $utf8NoBom)
 
 if ($cfPid -gt 0) {
     try {
@@ -420,34 +438,36 @@ if ($cfPid -gt 0) {
     }
 }
 
-$dstExe = Join-Path $dstDir $exeName
-$srcExe = Join-Path $srcDir 'ClickForge.exe'
+$dstExe = [System.IO.Path]::Combine($dstDir, $exeName)
+$srcExe = [System.IO.Path]::Combine($srcDir, 'ClickForge.exe')
 $bakExe = "$dstExe.cfbak"
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($exeName)
-Get-Process -Name $stem -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-        if ($_.Id -ne $cfPid -and $_.MainModule.FileName -ieq $dstExe) {
-            Write-Log "Closing running instance PID $($_.Id)"
-            $_.CloseMainWindow() | Out-Null
-            if (-not $_.WaitForExit(3000)) { $_.Kill() }
-        }
-    } catch {}
-}
+try {
+    foreach ($p in [System.Diagnostics.Process]::GetProcessesByName($stem)) {
+        try {
+            if ($p.Id -ne $cfPid -and $p.MainModule.FileName -ieq $dstExe) {
+                Write-Log "Closing running instance PID $($p.Id)"
+                $p.CloseMainWindow() | Out-Null
+                if (-not $p.WaitForExit(3000)) { $p.Kill() }
+            }
+        } catch {}
+    }
+} catch {}
 
-$expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $srcExe).Hash
+$expectedHash = Get-Sha256Hex $srcExe
 $swapped = $false
 
 for ($try = 1; $try -le 15; $try++) {
     try {
-        if (Test-Path -LiteralPath $bakExe) {
-            Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+        if ([System.IO.File]::Exists($bakExe)) {
+            [System.IO.File]::Delete($bakExe)
         }
-        if (Test-Path -LiteralPath $dstExe) {
-            Move-Item -LiteralPath $dstExe -Destination $bakExe -Force
+        if ([System.IO.File]::Exists($dstExe)) {
+            [System.IO.File]::Move($dstExe, $bakExe)
         }
-        Copy-Item -LiteralPath $srcExe -Destination $dstExe -Force
-        $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dstExe).Hash
+        [System.IO.File]::Copy($srcExe, $dstExe, $true)
+        $actualHash = Get-Sha256Hex $dstExe
         if ($actualHash -ne $expectedHash) {
             throw "SHA-256 mismatch ($actualHash != $expectedHash)"
         }
@@ -455,46 +475,67 @@ for ($try = 1; $try -le 15; $try++) {
         break
     } catch {
         Write-Log "Attempt $try failed: $($_.Exception.Message)"
-        if (Test-Path -LiteralPath $bakExe) {
-            try { Copy-Item -LiteralPath $bakExe -Destination $dstExe -Force } catch {}
+        if ([System.IO.File]::Exists($bakExe)) {
+            try { [System.IO.File]::Copy($bakExe, $dstExe, $true) } catch {}
         }
-        Start-Sleep -Milliseconds 300
+        [System.Threading.Thread]::Sleep(300)
     }
 }
 
 if ($swapped) {
-    $legacyInternal = Join-Path $dstDir '_internal'
-    if (Test-Path -LiteralPath $legacyInternal) {
-        Remove-Item -LiteralPath $legacyInternal -Recurse -Force -ErrorAction SilentlyContinue
+    $legacyInternal = [System.IO.Path]::Combine($dstDir, '_internal')
+    if ([System.IO.Directory]::Exists($legacyInternal)) {
+        try { [System.IO.Directory]::Delete($legacyInternal, $true) } catch {}
     }
-    Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+    if ([System.IO.File]::Exists($bakExe)) {
+        try { [System.IO.File]::Delete($bakExe) } catch {}
+    }
     if ($newVer) {
-        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge'
-        if (Test-Path $regPath) {
-            try { Set-ItemProperty -Path $regPath -Name 'DisplayVersion' -Value $newVer } catch {}
-        }
+        try {
+            $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge', $true)
+            if ($regKey) {
+                $regKey.SetValue('DisplayVersion', $newVer)
+                $regKey.Close()
+            }
+        } catch {}
     }
     Write-Log 'Update installed'
     if (-not $noRelaunch) {
-        Start-Process -FilePath $dstExe -WorkingDirectory $dstDir
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $dstExe
+        $psi.WorkingDirectory = $dstDir
+        $psi.UseShellExecute = $true
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
     }
-    Remove-Item -LiteralPath (Join-Path $workDir 'staged') -Recurse -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -LiteralPath $workDir -Filter '*.zip' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+    $stagedDir = [System.IO.Path]::Combine($workDir, 'staged')
+    if ([System.IO.Directory]::Exists($stagedDir)) {
+        try { [System.IO.Directory]::Delete($stagedDir, $true) } catch {}
+    }
+    try {
+        foreach ($zf in [System.IO.Directory]::GetFiles($workDir, '*.zip')) {
+            try { [System.IO.File]::Delete($zf) } catch {}
+        }
+    } catch {}
 } else {
     Write-Log 'Update aborted; restoring backup'
-    if (Test-Path -LiteralPath $bakExe) {
-        try { Copy-Item -LiteralPath $bakExe -Destination $dstExe -Force } catch {}
-        Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+    if ([System.IO.File]::Exists($bakExe)) {
+        try { [System.IO.File]::Copy($bakExe, $dstExe, $true) } catch {}
+        try { [System.IO.File]::Delete($bakExe) } catch {}
     }
-    if (-not $noRelaunch -and (Test-Path -LiteralPath $dstExe)) {
-        Start-Process -FilePath $dstExe -WorkingDirectory $dstDir
+    if (-not $noRelaunch -and [System.IO.File]::Exists($dstExe)) {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $dstExe
+        $psi.WorkingDirectory = $dstDir
+        $psi.UseShellExecute = $true
+        [System.Diagnostics.Process]::Start($psi) | Out-Null
     }
 }
 
 $self = $MyInvocation.MyCommand.Path
-if ($self -and (Test-Path -LiteralPath $self)) {
-    Remove-Item -LiteralPath $self -Force -ErrorAction SilentlyContinue
+if ($self -and [System.IO.File]::Exists($self)) {
+    try { [System.IO.File]::Delete($self) } catch {}
 }
+if ($swapped) { exit 0 } else { exit 1 }
 "#;
 
 pub fn launch_self_updater(staged_app: &Path, workdir: &Path, new_version: &str) -> Result<(), String> {
@@ -613,12 +654,11 @@ mod tests {
         let root = std::env::temp_dir().join("clickforge_test_ps1_swap");
         let _ = fs::remove_dir_all(&root);
         let dst = root.join("dst");
-        let src = root.join("src");
         let work = root.join("work");
+        let src = work.join("staged");
         let legacy_internal = dst.join("_internal");
         fs::create_dir_all(&legacy_internal).unwrap();
         fs::create_dir_all(&src).unwrap();
-        fs::create_dir_all(&work).unwrap();
 
         let dst_exe = dst.join("ClickForge.exe");
         let src_exe = src.join("ClickForge.exe");
@@ -630,7 +670,7 @@ mod tests {
         let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
         fs::write(&script, normalized).unwrap();
 
-        let status = Command::new("powershell.exe")
+        let output = Command::new("powershell.exe")
             .args([
                 "-NoProfile",
                 "-NonInteractive",
@@ -650,16 +690,22 @@ mod tests {
             .env("CF_NO_RELAUNCH", "1")
             .creation_flags(0x0800_0000)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
+            .output()
             .expect("powershell updater failed to launch");
 
-        assert!(status.success());
+        let log = fs::read_to_string(work.join("update.log")).unwrap_or_default();
+        assert!(
+            output.status.success(),
+            "ps1 exited {:?}; stdout={}; stderr={}; log={}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+            log
+        );
         assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V4_1_1");
         assert!(!dst.join("ClickForge.exe.cfbak").exists());
         assert!(!legacy_internal.exists());
-        let log = fs::read_to_string(work.join("update.log")).unwrap();
+        assert!(!src.exists());
         assert!(log.contains("Update installed"), "unexpected log: {log}");
 
         let _ = fs::remove_dir_all(&root);
