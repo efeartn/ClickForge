@@ -2,6 +2,21 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [4.1.0] - 2026-11-27 — "Ferrous"
+
+### Added
+- **Native Linux Wayland & Hyprland Support (`src/core/wayland.rs`)**:
+  - Added pure-`libc` `/dev/uinput` virtual mouse & absolute pointer devices plus direct `/dev/input/event*` `evdev` global keyboard & `Mouse4`/`Mouse5` hotkey listener on Wayland sessions (with automatic X11 fallback).
+  - Added direct **Hyprland UNIX socket IPC** (`cursorpos`, `dispatch movecursor`, `j/monitors`) for exact multi-monitor virtual bounds, pointer readout, and `Fixed XY` clicking on Hyprland.
+  - Added relative zero-drift **Humanizer Spread (`± px`)** cleanly restoring pointer deltas when absolute cursor coordinates aren't exposed by a Wayland compositor, and fullscreen Wayland mode for `CoordinatePicker`.
+  - Replaced generic Wayland warnings with actionable `/dev/uinput` and `input` group diagnostics (silent when configured).
+
+### Fixed
+- **Sub-Millisecond Panic & Hold-Release Latency**: `Esc` panic stop and `Hold`-mode trigger release now stop `ClickEngine` directly on the listener thread instead of waiting for UI frame delivery.
+- **Coordinate Picker Esc Cancellation**: Pressing global `Esc` while the crosshair overlay is open now cancels picking immediately alongside stopping any run.
+- **No Spurious `Custom` Preset Switch**: Committing unchanged Humanizer fields on blur or `Start` no longer marks `Default`, `Fast`, or `Humanized` presets as `Custom`.
+- **Immediate Windows Idle Hook Detach**: Clearing hotkey recording state immediately detaches Windows' low-level mouse hook after recording finishes.
+
 ## [4.0.0] - 2026-11-27 — "Ferrous"
 
 ### Changed (Complete Pure Rust Migration)

@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -192,6 +192,7 @@ pub struct ClickForgeApp {
     human_err: Option<Instant>,
 
     // Runtime & status
+    trigger_is_hold: Arc<AtomicBool>,
     recording_hotkey: bool,
     any_field_focused: bool,
     last_os_dark: Option<bool>,
@@ -219,7 +220,15 @@ impl ClickForgeApp {
     pub fn new(cc: &eframe::CreationContext<'_>, opts: StartupOptions) -> Self {
         install_native_fonts(&cc.egui_ctx);
 
-        let mut config = AppConfig::load_default();
+        let preview_mode = opts.preview_dialog.is_some()
+            || opts.preview_theme.is_some()
+            || opts.screenshot_out.is_some();
+
+        let mut config = if preview_mode {
+            AppConfig::default()
+        } else {
+            AppConfig::load_default()
+        };
         if let Some(t) = &opts.preview_theme {
             if matches!(t.as_str(), "Dark" | "Light" | "System") {
                 config.theme = t.clone();
@@ -258,18 +267,26 @@ impl ClickForgeApp {
 
         let tx_hk = events_tx.clone();
         let egui_for_hk = cc.egui_ctx.clone();
+        let engine_for_hk = Arc::clone(&engine);
+        let trigger_is_hold = Arc::new(AtomicBool::new(config.trigger_mode == "hold"));
+        let hold_for_hk = Arc::clone(&trigger_is_hold);
         let hotkeys = TriggerListener::new(
             &config.hotkey,
             Arc::new(move |ev| {
+                // Stop engine directly on listener thread for sub-ms Panic / Hold release latency.
+                match &ev {
+                    TriggerEvent::Panic => engine_for_hk.stop(false),
+                    TriggerEvent::Up if hold_for_hk.load(Ordering::Acquire) => {
+                        engine_for_hk.stop(false);
+                    }
+                    _ => {}
+                }
                 let _ = tx_hk.send(AppEvent::Hotkey(ev));
                 egui_for_hk.request_repaint();
             }),
         );
         hotkeys.start();
 
-        let preview_mode = opts.preview_dialog.is_some()
-            || opts.preview_theme.is_some()
-            || opts.screenshot_out.is_some();
         let modal = match opts.preview_dialog.as_deref() {
             Some("setup") => Some(ModalDialog::SetupPrompt {
                 create_desktop_shortcut: true,
@@ -317,6 +334,7 @@ impl ClickForgeApp {
             repeat_err: None,
             coords_err: None,
             human_err: None,
+            trigger_is_hold,
             recording_hotkey: false,
             any_field_focused: false,
             last_os_dark: Some(pal.is_dark),
@@ -420,11 +438,17 @@ impl ClickForgeApp {
             if lo > hi {
                 std::mem::swap(&mut lo, &mut hi);
             }
+            let changed = (j_c - self.config.settings.jitter_pct).abs() > 1e-6
+                || pj_c != self.config.settings.pos_jitter_px
+                || (lo - self.config.settings.hold_min_ms).abs() > 1e-6
+                || (hi - self.config.settings.hold_max_ms).abs() > 1e-6;
             self.config.settings.jitter_pct = j_c;
             self.config.settings.pos_jitter_px = pj_c;
             self.config.settings.hold_min_ms = lo;
             self.config.settings.hold_max_ms = hi;
-            self.mark_custom();
+            if changed {
+                self.mark_custom();
+            }
             self.sync_buffers_from_config();
         } else {
             self.human_err = Some(Instant::now() + Duration::from_millis(850));
@@ -514,6 +538,7 @@ impl ClickForgeApp {
                 }
                 AppEvent::Hotkey(hk) => match hk {
                     TriggerEvent::Panic => {
+                        self.picker.cancel();
                         self.stop_clicking(false);
                     }
                     TriggerEvent::Down => {
@@ -530,6 +555,7 @@ impl ClickForgeApp {
                     }
                     TriggerEvent::Recorded(binding) => {
                         self.recording_hotkey = false;
+                        self.hotkeys.set_recording(false);
                         self.config.hotkey = binding;
                         if !self.preview_mode {
                             let _ = self.config.save();
@@ -537,6 +563,7 @@ impl ClickForgeApp {
                     }
                     TriggerEvent::RecordCancelled => {
                         self.recording_hotkey = false;
+                        self.hotkeys.set_recording(false);
                     }
                 },
                 AppEvent::UpdateFound(release, manual) => {
@@ -1768,6 +1795,8 @@ impl ClickForgeApp {
                 editable,
                 132.0,
             ) {
+                self.trigger_is_hold
+                    .store(trig == TriggerMode::Hold, Ordering::Release);
                 self.config.trigger_mode = match trig {
                     TriggerMode::Toggle => "toggle",
                     TriggerMode::Hold => "hold",

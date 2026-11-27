@@ -760,12 +760,14 @@ mod platform {
     }
 }
 
-// ── Linux X11 Record Extension Backend ───────────────────────────────────────
+// ── Linux Wayland (evdev) + X11 Record Extension Backend ─────────────────────
 
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
+    use crate::core::wayland::{evdev_code_to_name, linux_rt};
     use std::collections::HashMap;
+    use std::mem::size_of;
     use std::sync::atomic::AtomicU32;
     use std::thread::{self, JoinHandle};
     use x11rb::connection::Connection;
@@ -803,6 +805,70 @@ mod platform {
         Some(special.to_string())
     }
 
+    fn run_evdev_loop(
+        shared: &Arc<Mutex<SharedState>>,
+        callback: &TriggerCallback,
+        running: &Arc<AtomicBool>,
+        fds: Vec<std::os::unix::io::RawFd>,
+    ) {
+        let mut pollfds: Vec<libc::pollfd> = fds
+            .iter()
+            .map(|&fd| libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            })
+            .collect();
+        let mut ev: linux_rt::InputEvent = unsafe { std::mem::zeroed() };
+        let ev_size = size_of::<linux_rt::InputEvent>() as libc::size_t;
+
+        while running.load(Ordering::Acquire) {
+            let ready = unsafe {
+                libc::poll(
+                    pollfds.as_mut_ptr(),
+                    pollfds.len() as libc::nfds_t,
+                    150,
+                )
+            };
+            if ready < 0 {
+                let err = std::io::Error::last_os_error().raw_os_error();
+                if err == Some(libc::EINTR) {
+                    continue;
+                }
+                break;
+            }
+            if ready == 0 {
+                continue;
+            }
+            for pfd in &mut pollfds {
+                if (pfd.revents & libc::POLLIN) == 0 {
+                    continue;
+                }
+                loop {
+                    let n = unsafe {
+                        libc::read(
+                            pfd.fd,
+                            (&mut ev as *mut linux_rt::InputEvent) as *mut libc::c_void,
+                            ev_size,
+                        )
+                    };
+                    if n != ev_size as isize {
+                        break;
+                    }
+                    if ev.type_ == linux_rt::EV_KEY && (ev.value == 0 || ev.value == 1) {
+                        if let Some(name) = evdev_code_to_name(ev.code) {
+                            dispatch_input(shared, callback, &name, ev.value == 1);
+                        }
+                    }
+                }
+            }
+        }
+
+        for fd in fds {
+            unsafe { libc::close(fd) };
+        }
+    }
+
     pub struct HookBackend {
         shared: Arc<Mutex<SharedState>>,
         callback: TriggerCallback,
@@ -836,6 +902,14 @@ mod platform {
             let handle = thread::Builder::new()
                 .name("ClickForge-Hotkeys".to_string())
                 .spawn(move || {
+                    if linux_rt::is_wayland_session() {
+                        let evdev_fds = linux_rt::open_evdev_hotkey_devices();
+                        if !evdev_fds.is_empty() {
+                            run_evdev_loop(&shared, &callback, &running, evdev_fds);
+                            return;
+                        }
+                    }
+
                     let Ok((data_conn, _)) = x11rb::connect(None) else {
                         return;
                     };
@@ -899,7 +973,6 @@ mod platform {
                                 break;
                             };
                             if reply.category != 0 {
-                                // FromServer raw wire device events are 32-byte packets.
                                 continue;
                             }
                             for pkt in reply.data.chunks_exact(32) {

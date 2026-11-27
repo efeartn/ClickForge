@@ -35,6 +35,7 @@ pub trait InputBackend: Send + Sync {
         self.release(button);
     }
     fn move_to(&self, x: i32, y: i32);
+    fn move_relative(&self, _dx: i32, _dy: i32) {}
     fn position(&self) -> Option<(i32, i32)>;
 }
 
@@ -43,6 +44,7 @@ pub trait InputBackend: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DummyEvent {
     Move(i32, i32),
+    MoveRel(i32, i32),
     Press(MouseButton),
     Release(MouseButton),
     Click(MouseButton),
@@ -50,14 +52,22 @@ pub enum DummyEvent {
 
 pub struct DummyBackend {
     events: Mutex<Vec<DummyEvent>>,
-    cursor: Mutex<(i32, i32)>,
+    cursor: Mutex<Option<(i32, i32)>>,
 }
 
 impl DummyBackend {
     pub fn new(initial_pos: (i32, i32)) -> Self {
         Self {
             events: Mutex::new(Vec::new()),
-            cursor: Mutex::new(initial_pos),
+            cursor: Mutex::new(Some(initial_pos)),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn with_unknown_pos() -> Self {
+        Self {
+            events: Mutex::new(Vec::new()),
+            cursor: Mutex::new(None),
         }
     }
 
@@ -68,7 +78,7 @@ impl DummyBackend {
 
     #[allow(dead_code)]
     pub fn set_cursor(&self, pos: (i32, i32)) {
-        *self.cursor.lock().unwrap_or_else(|e| e.into_inner()) = pos;
+        *self.cursor.lock().unwrap_or_else(|e| e.into_inner()) = Some(pos);
     }
 }
 
@@ -95,15 +105,26 @@ impl InputBackend for DummyBackend {
     }
 
     fn move_to(&self, x: i32, y: i32) {
-        *self.cursor.lock().unwrap_or_else(|e| e.into_inner()) = (x, y);
+        *self.cursor.lock().unwrap_or_else(|e| e.into_inner()) = Some((x, y));
         self.events
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(DummyEvent::Move(x, y));
     }
 
+    fn move_relative(&self, dx: i32, dy: i32) {
+        let mut cur = self.cursor.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((cx, cy)) = *cur {
+            *cur = Some((cx + dx, cy + dy));
+        }
+        self.events
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DummyEvent::MoveRel(dx, dy));
+    }
+
     fn position(&self) -> Option<(i32, i32)> {
-        Some(*self.cursor.lock().unwrap_or_else(|e| e.into_inner()))
+        *self.cursor.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -341,11 +362,16 @@ mod platform {
     }
 }
 
-// ── Linux X11 (x11rb + XTest) Backend ───────────────────────────────────────
+// ── Linux Hybrid Wayland (Hyprland / uinput) + X11 (XTest) Backend ──────────
 
 #[cfg(target_os = "linux")]
 mod platform {
     use super::*;
+    use crate::core::system::virtual_screen_bounds;
+    use crate::core::wayland::linux_rt::{
+        hyprland_cursor_pos, hyprland_move_cursor, is_hyprland_session, is_wayland_session,
+        UinputAbsPointer, UinputMouse,
+    };
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{
         query_pointer, BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, MOTION_NOTIFY_EVENT,
@@ -354,19 +380,37 @@ mod platform {
     use x11rb::rust_connection::RustConnection;
 
     pub struct NativeBackend {
-        state: Mutex<Option<(RustConnection, u32)>>,
+        is_wayland: bool,
+        is_hyprland: bool,
+        uinput_mouse: Mutex<Option<UinputMouse>>,
+        uinput_abs: Mutex<Option<UinputAbsPointer>>,
+        x11: Mutex<Option<(RustConnection, u32)>>,
     }
 
     impl NativeBackend {
         pub fn new() -> Self {
-            let conn = x11rb::connect(None)
-                .ok()
-                .map(|(c, screen_num)| {
-                    let root = c.setup().roots[screen_num].root;
-                    (c, root)
-                });
+            let is_wayland = is_wayland_session();
+            let is_hyprland = is_hyprland_session();
+            let uinput_mouse = if is_wayland {
+                UinputMouse::open()
+            } else {
+                None
+            };
+            let uinput_abs = if is_wayland && !is_hyprland && uinput_mouse.is_some() {
+                UinputAbsPointer::open()
+            } else {
+                None
+            };
+            let x11 = x11rb::connect(None).ok().map(|(c, screen_num)| {
+                let root = c.setup().roots[screen_num].root;
+                (c, root)
+            });
             Self {
-                state: Mutex::new(conn),
+                is_wayland,
+                is_hyprland,
+                uinput_mouse: Mutex::new(uinput_mouse),
+                uinput_abs: Mutex::new(uinput_abs),
+                x11: Mutex::new(x11),
             }
         }
 
@@ -381,7 +425,14 @@ mod platform {
 
     impl InputBackend for NativeBackend {
         fn press(&self, button: MouseButton) {
-            let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            {
+                let mut ui = self.uinput_mouse.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(m) = ui.as_mut() {
+                    m.press(button);
+                    return;
+                }
+            }
+            let guard = self.x11.lock().unwrap_or_else(|e| e.into_inner());
             if let Some((conn, _)) = guard.as_ref() {
                 let _ = fake_input(
                     conn,
@@ -398,7 +449,14 @@ mod platform {
         }
 
         fn release(&self, button: MouseButton) {
-            let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            {
+                let mut ui = self.uinput_mouse.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(m) = ui.as_mut() {
+                    m.release(button);
+                    return;
+                }
+            }
+            let guard = self.x11.lock().unwrap_or_else(|e| e.into_inner());
             if let Some((conn, _)) = guard.as_ref() {
                 let _ = fake_input(
                     conn,
@@ -414,8 +472,34 @@ mod platform {
             }
         }
 
+        fn click(&self, button: MouseButton) {
+            {
+                let mut ui = self.uinput_mouse.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(m) = ui.as_mut() {
+                    m.click(button);
+                    return;
+                }
+            }
+            self.press(button);
+            self.release(button);
+        }
+
         fn move_to(&self, x: i32, y: i32) {
-            let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if self.is_wayland && self.is_hyprland && hyprland_move_cursor(x, y) {
+                return;
+            }
+            if self.is_wayland {
+                let mut abs = self.uinput_abs.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(ptr) = abs.as_mut() {
+                    let (left, top, width, height) =
+                        virtual_screen_bounds().unwrap_or((0, 0, 1920, 1080));
+                    let nx = (((x - left) as f64 / width.max(1) as f64) * 65535.0).round() as i32;
+                    let ny = (((y - top) as f64 / height.max(1) as f64) * 65535.0).round() as i32;
+                    ptr.move_normalized(nx, ny);
+                    return;
+                }
+            }
+            let guard = self.x11.lock().unwrap_or_else(|e| e.into_inner());
             if let Some((conn, root)) = guard.as_ref() {
                 let _ = fake_input(
                     conn,
@@ -431,8 +515,25 @@ mod platform {
             }
         }
 
+        fn move_relative(&self, dx: i32, dy: i32) {
+            if self.is_wayland {
+                let mut ui = self.uinput_mouse.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some(m) = ui.as_mut() {
+                    m.move_relative(dx, dy);
+                }
+            }
+        }
+
         fn position(&self) -> Option<(i32, i32)> {
-            let guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
+            if self.is_wayland && self.is_hyprland {
+                if let Some(pos) = hyprland_cursor_pos() {
+                    return Some(pos);
+                }
+            }
+            if self.is_wayland {
+                return None;
+            }
+            let guard = self.x11.lock().unwrap_or_else(|e| e.into_inner());
             let (conn, root) = guard.as_ref()?;
             let reply = query_pointer(conn, *root).ok()?.reply().ok()?;
             Some((reply.root_x as i32, reply.root_y as i32))

@@ -4,13 +4,13 @@
 
 # ClickForge
 
-**High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux.**
+**High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux (Wayland / Hyprland & X11).**
 
-Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`, CoreGraphics, XTest), 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
+Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`, CoreGraphics, `/dev/uinput` + Hyprland IPC, X11 XTest), 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
 
 [![Latest Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=10A37F&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-52525B)](#download--install)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20(Wayland%20%2F%20X11)-52525B)](#download--install)
 [![Changelog](https://img.shields.io/badge/Changelog-History-3F3F46)](CHANGELOG.md)
 
 [![Download Windows Setup](https://img.shields.io/badge/Windows%20Installer-ClickForge--Setup.exe-10A37F?style=for-the-badge&logo=windows)](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe)
@@ -48,15 +48,15 @@ Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`
 
 ---
 
-## Pure Native Performance (`v4.0.0 — "Ferrous"`)
+## Pure Native Performance (`v4.1.0 — "Ferrous"`)
 
-Rewritten from the ground up in **Rust** for instant startup, minimal footprint, and deterministic click timing:
+Rewritten from the ground up in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
 
-- **Single Native Executable:** Ships as a standalone **`4.97 MB`** Windows executable with zero runtime dependencies or temporary bundle extraction.
-- **Instant Launch & Low Overhead:** Opens directly in **`~172 ms`**, pauses repaints down to idle cadence when settled, and draws crisp procedural vector header icons directly via GPU shaders.
-- **Adaptive & Compact Workspace:** Inactive sections (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) collapse automatically to keep the window compact on any display.
-- **Follow Cursor & `10 ms` Default:** Starts ready to click where your pointer is at `10 ms` (`~100 CPS`), scaling from `1 click/hour` up to **`1,000 CPS`** (`1 ms` interval).
-- **Working `F6` Trigger & `Esc` Panic:** Press **`F6`** immediately on launch (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the keycap control, or press **`Esc`** / fling the pointer to `(0, 0)` for instant emergency stop.
+- **Single Native Executable:** Ships as a standalone **`~5 MB`** binary with zero runtime dependencies or temporary extraction delays.
+- **Instant Launch & Low Overhead:** Opens cleanly in under **`200 ms`**, relaxes repaints when settled, and draws crisp procedural vector header icons directly via GPU shaders.
+- **Adaptive & Compact Workspace:** Inactive sections (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) collapse automatically to stay compact on any display.
+- **Follow Cursor & `10 ms` Default:** Ready immediately on launch to click at your pointer (`10 ms` / `~100 CPS`), scaling from `1 click/hour` up to **`1,000 CPS`** (`1 ms` interval).
+- **Zero-Delay Global Triggers & `Esc` Panic:** Press **`F6`** (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the keycap button, or press **`Esc`** / fling pointer to `(0, 0)` to stop immediately—even from fullscreen apps.
 
 ---
 
@@ -64,16 +64,34 @@ Rewritten from the ground up in **Rust** for instant startup, minimal footprint,
 
 | Platform | Package | Notes |
 | --- | --- | --- |
-| **Windows (Installer)** | [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) | **Recommended.** Installs to `%LOCALAPPDATA%\Programs\ClickForge`, adds Start Menu shortcuts & Windows Installed Apps entry with no UAC/admin prompt, and enables automatic self-updates. |
+| **Windows (Installer)** | [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) | **Recommended.** Installs to `%LOCALAPPDATA%\Programs\ClickForge`, registers Start Menu & Windows Installed Apps without admin UAC prompts, and enables automatic self-updates. |
 | **Windows (Portable)** | [`ClickForge-Windows.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Windows.zip) | Extract and run `ClickForge.exe`. Includes a **Setup** button in the header to install into Windows Programs anytime. |
-| **macOS** | [`ClickForge-macOS.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-macOS.zip) | Unzip `ClickForge.app`. Grant **Accessibility** access under *System Settings → Privacy & Security* so global hotkeys and mouse injection work. |
-| **Linux (X11)** | [`ClickForge-Linux.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Linux.zip) | Unzip and run `./ClickForge`. Requires an X11 session for XTest injection and X11 Record global hotkeys. |
+| **macOS** | [`ClickForge-macOS.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-macOS.zip) | Unzip `ClickForge.app`. Grant **Accessibility** access under *System Settings → Privacy & Security* for global hotkeys and mouse injection. |
+| **Linux (Wayland / Hyprland & X11)** | [`ClickForge-Linux.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Linux.zip) | Unzip and run `./ClickForge`. Works natively on **Hyprland / Wayland** (see one-time permissions below) and **X11 / Xorg** out of the box. |
 
 ### Quick Start
 
-1. Run [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) (if Windows SmartScreen prompts on an unsigned release, click **More info → Run anyway**).
-2. Launch **ClickForge** from the Start Menu (`Follow Cursor`, `10 ms` / `~100 CPS`, and `F6` are ready immediately).
-3. Press **`F6`** (or click **START**) to start/stop clicking; press **`Esc`** or move the cursor to `(0, 0)` to panic-stop anytime.
+1. Download the release package for your OS above.
+2. Launch **ClickForge** (`Follow Cursor`, `10 ms` / `~100 CPS`, and `F6` work immediately).
+3. Press **`F6`** (or click **START**) to begin; press **`Esc`** or move the cursor to `(0, 0)` to panic-stop anytime.
+
+### Linux Wayland & Hyprland Setup
+
+Wayland isolates display clients from reading global keys or injecting synthetic clicks directly, so ClickForge uses Linux kernel `/dev/uinput` + `evdev` (plus direct **Hyprland socket IPC** for multi-monitor bounds and exact `Fixed XY` cursor moves):
+
+1. Grant your user permission to read input events (`evdev` global hotkeys) and create a virtual mouse (`/dev/uinput` clicks):
+   ```bash
+   sudo usermod -aG input "$USER"
+   echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | sudo tee /etc/udev/rules.d/99-clickforge.rules
+   sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput
+   ```
+2. Log out and log back into your session so group membership takes effect.
+
+| Linux Backend | Clicks | Hotkeys (`Keyboard` & `Mouse4/5`) | `Fixed XY` Positioning | Notes |
+| --- | --- | --- | --- | --- |
+| **Hyprland (Wayland)** | `/dev/uinput` | `/dev/input/event*` | Hyprland IPC (`movecursor` + `j/monitors`) | Multi-monitor + corner failsafe supported |
+| **Other Wayland** *(Sway, GNOME, KDE)* | `/dev/uinput` | `/dev/input/event*` | Virtual absolute pointer (`ABS_X/Y`) | Includes zero-drift relative Humanizer spread |
+| **X11 / Xorg** | `XTest` (`x11rb`) | `RECORD` extension | Native root coordinates | Works immediately with no setup |
 
 ---
 
@@ -89,11 +107,12 @@ Rewritten from the ground up in **Rust** for instant startup, minimal footprint,
 | **Custom** | User-defined (`ms` / `sec` / `min` / `CPS`) | `Follow Cursor` or `Fixed XY` | `Left` / `Right` / `Middle` · `1x` / `2x` · `Infinite` / `Fixed` | Optional |
 
 ### Precision Timing & Cross-Platform Backends
-- **Windows `SendInput` & `timeBeginPeriod(1)`:** Acquires 1 ms OS timer resolution via an RAII guard while running, pairing `Condvar::wait_timeout` with a final spin window to sustain up to **`1,000 CPS`**.
-- **macOS & Linux Native Backends:** Uses CoreGraphics (`CGEventCreateMouseEvent` / `CGEventTapCreate`) on macOS and `x11rb` (`xtest` + `record`) on Linux X11 with zero external runtime dependencies.
-- **Guaranteed Button Release:** Stopping mid-hold or exiting mid-run always emits `mouseUp` so buttons never stick.
-- **Anchored Humanizer Spread:** Uniform-disk coordinate **Spread (`± px`)** works in both **Follow Cursor** and **Fixed XY** without cumulative cursor drift.
-- **Verified In-App Auto-Updater:** Checks GitHub Releases via `ureq` + `rustls`, displays formatted `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and safely swaps Windows builds with `.cfbak` rollback.
+- **Windows:** Pre-built Win32 `SendInput` structs, RAII `timeBeginPeriod(1)` 1 ms multimedia timer, and low-level `WH_KEYBOARD_LL` + on-demand `WH_MOUSE_LL` (`Mouse4`/`Mouse5`) hooks.
+- **macOS:** Direct CoreGraphics (`CGEventCreateMouseEvent`, `CGEventPost`, `CGEventTapCreate`) with multi-monitor `CGDisplayBounds`.
+- **Linux:** Automatic runtime selection between native Wayland (`uinput` + `evdev` + Hyprland IPC) and X11 (`XTest` + `RECORD`).
+- **Guaranteed Button Release:** Stopping mid-hold, pressing `Esc`, or exiting always emits `mouseUp` so buttons never stick.
+- **Anchored Humanizer Spread:** Gaussian interval jitter, triangular hold duty, and zero-drift disk **Spread (`± px`)** work in both **Follow Cursor** (even via relative deltas on Wayland) and **Fixed XY**.
+- **Verified In-App Auto-Updater:** Checks GitHub Releases via `ureq` + `rustls`, displays `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and applies rollback-safe Windows updates automatically.
 
 ---
 
@@ -113,7 +132,7 @@ On Debian/Ubuntu Linux, install the X11 & OpenGL development headers first:
 sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev
 ```
 
-Run tests and smoke checks:
+Run unit tests and headless CLI checks:
 
 ```bash
 cargo test
@@ -128,12 +147,13 @@ cargo run --release -- --smoke-test
 ClickForge/
 ├── src/
 │   ├── main.rs                 # Entrypoint, CLI (--version / --smoke-test), eframe setup
-│   ├── meta.rs                 # App name, version (4.0.0), codename (Ferrous), embedded icon
+│   ├── meta.rs                 # App name, version (4.1.0), codename (Ferrous), embedded icon
 │   ├── core/
 │   │   ├── clicker.rs          # Lock-free telemetry, Humanizer worker, corner failsafe
 │   │   ├── config.rs           # Schema-validated persistent config & profile presets
-│   │   ├── hotkeys.rs          # Global keyboard & Mouse4/5 listeners (Win32 / macOS / X11)
-│   │   ├── input_backend.rs    # Native mouse injection (SendInput / CoreGraphics / XTest)
+│   │   ├── hotkeys.rs          # Global triggers (Win32 / macOS / evdev / X11 Record)
+│   │   ├── input_backend.rs    # Mouse injection (SendInput / CoreGraphics / uinput / XTest)
+│   │   ├── wayland.rs          # Linux Wayland uinput, evdev reader & Hyprland socket IPC
 │   │   ├── installer.rs        # Windows Programs & Start Menu installer integration
 │   │   ├── sound.rs            # Non-blocking start/stop chimes
 │   │   ├── system.rs           # Multi-monitor bounds, permission checks, cleanup

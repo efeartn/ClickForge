@@ -302,6 +302,7 @@ impl ClickEngine {
         let mut remaining = s.repeat_count;
         let mut jitter_anchor: Option<(i32, i32)> = None;
         let mut last_jitter_pos: Option<(i32, i32)> = None;
+        let mut rel_offset: (i32, i32) = (0, 0);
         let mut next_deadline = Instant::now();
         let mut reason = StopReason::Stopped;
 
@@ -327,6 +328,14 @@ impl ClickEngine {
                         let (jx, jy) = jitter_point(&mut rng, ax, ay, s.position_jitter_px);
                         last_jitter_pos = Some((jx, jy));
                         self.backend.move_to(jx, jy);
+                    }
+                } else {
+                    let (tx, ty) = jitter_point(&mut rng, 0, 0, s.position_jitter_px);
+                    let dx = tx - rel_offset.0;
+                    let dy = ty - rel_offset.1;
+                    rel_offset = (tx, ty);
+                    if dx != 0 || dy != 0 {
+                        self.backend.move_relative(dx, dy);
                     }
                 }
             }
@@ -393,6 +402,9 @@ impl ClickEngine {
             }
         }
 
+        if rel_offset != (0, 0) {
+            self.backend.move_relative(-rel_offset.0, -rel_offset.1);
+        }
         self.active.store(false, Ordering::Release);
         {
             let mut t = self.timing.lock().unwrap_or_else(|e| e.into_inner());
@@ -556,5 +568,40 @@ mod tests {
             .filter(|e| matches!(e, DummyEvent::Release(_)))
             .count();
         assert_eq!(presses, releases);
+    }
+
+    #[test]
+    fn relative_follow_cursor_spread_has_zero_drift() {
+        let backend = Arc::new(DummyBackend::with_unknown_pos());
+        let (tx, rx) = mpsc::channel();
+        let engine = Arc::new(ClickEngine::with_backend(
+            backend.clone(),
+            Some(Arc::new(move |r| {
+                let _ = tx.send(r);
+            })),
+        ));
+        let settings = ClickSettings {
+            interval_ms: 1.0,
+            repeat_count: 15,
+            fixed_position: None,
+            humanize: true,
+            jitter_pct: 0.0,
+            hold_min_ms: 0.0,
+            hold_max_ms: 0.0,
+            position_jitter_px: 5,
+            corner_failsafe: false,
+            ..Default::default()
+        };
+        assert!(engine.start(settings));
+        rx.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        let (sum_dx, sum_dy) = backend.events().into_iter().fold((0, 0), |(sx, sy), ev| {
+            if let DummyEvent::MoveRel(dx, dy) = ev {
+                (sx + dx, sy + dy)
+            } else {
+                (sx, sy)
+            }
+        });
+        assert_eq!((sum_dx, sum_dy), (0, 0));
     }
 }

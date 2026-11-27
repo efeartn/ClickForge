@@ -40,7 +40,6 @@ impl CoordinatePicker {
         self.active = true;
     }
 
-    #[allow(dead_code)]
     pub fn cancel(&mut self) {
         self.active = false;
     }
@@ -52,7 +51,12 @@ impl CoordinatePicker {
 
         let (left, top, width, height) = self.bounds;
         let ppp = ctx.pixels_per_point().max(1.0);
-        let builder = ViewportBuilder::default()
+        #[cfg(target_os = "linux")]
+        let wayland_fs = crate::core::wayland::linux_rt::is_wayland_session();
+        #[cfg(not(target_os = "linux"))]
+        let wayland_fs = false;
+
+        let mut builder = ViewportBuilder::default()
             .with_title("ClickForge Coordinate Picker")
             .with_decorations(false)
             .with_transparent(true)
@@ -60,6 +64,9 @@ impl CoordinatePicker {
             .with_taskbar(false)
             .with_position(pos2(left as f32 / ppp, top as f32 / ppp))
             .with_inner_size(vec2(width as f32 / ppp, height as f32 / ppp));
+        if wayland_fs {
+            builder = builder.with_fullscreen(true);
+        }
 
         let mut outcome = PickerOutcome::Pending;
         let opened_at = self.opened_at;

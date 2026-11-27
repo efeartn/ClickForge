@@ -87,6 +87,11 @@ pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
 
     #[cfg(target_os = "linux")]
     {
+        if crate::core::wayland::linux_rt::is_hyprland_session() {
+            if let Some(bounds) = crate::core::wayland::linux_rt::hyprland_virtual_bounds() {
+                return Some(bounds);
+            }
+        }
         use x11rb::connection::Connection;
         let Ok((conn, screen_num)) = x11rb::connect(None) else {
             return None;
@@ -115,14 +120,8 @@ pub fn startup_warnings() -> Vec<String> {
 
     #[cfg(target_os = "linux")]
     {
-        if std::env::var("XDG_SESSION_TYPE")
-            .map(|s| s.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
-        {
-            warnings.push(
-                "Wayland restricts synthetic global clicks and hotkeys; switch to an X11/Xorg session if hotkeys or clicking do not respond."
-                    .to_string(),
-            );
+        if let Some(warn) = crate::core::wayland::linux_rt::wayland_permission_warning() {
+            warnings.push(warn);
         }
     }
 
