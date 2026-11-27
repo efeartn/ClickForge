@@ -28,52 +28,77 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller certifi
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
 
-      - name: Build Linux dependencies
+      - name: Install Linux X11 / OpenGL dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk libx11-dev xvfb
+          sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev zip
 
       - name: Run unit tests
-        run: |
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a python -m unittest discover tests
-          else
-            python -m unittest discover tests
-          fi
-        shell: bash
+        run: cargo test
 
-      - name: Build executable with PyInstaller
-        run: pyinstaller clickforge.spec --clean -y
+      - name: Build native release binary
+        run: cargo build --release
+
+      - name: Stage platform bundle
+        shell: bash
+        run: |
+          rm -rf dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mkdir -p dist/ClickForge
+            cp target/release/ClickForge.exe dist/ClickForge/ClickForge.exe
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            VER=$(awk -F'"' '/^version =/{print $2; exit}' Cargo.toml)
+            mkdir -p dist/ClickForge.app/Contents/MacOS dist/ClickForge.app/Contents/Resources
+            cp target/release/ClickForge dist/ClickForge.app/Contents/MacOS/ClickForge
+            chmod +x dist/ClickForge.app/Contents/MacOS/ClickForge
+            cp assets/icon.icns dist/ClickForge.app/Contents/Resources/icon.icns
+            cat > dist/ClickForge.app/Contents/Info.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDisplayName</key><string>ClickForge</string>
+            <key>CFBundleExecutable</key><string>ClickForge</string>
+            <key>CFBundleIconFile</key><string>icon.icns</string>
+            <key>CFBundleIdentifier</key><string>com.efeartn.ClickForge</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>ClickForge</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>${VER}</string>
+            <key>CFBundleVersion</key><string>${VER}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+          else
+            mkdir -p dist/ClickForge
+            cp target/release/ClickForge dist/ClickForge/ClickForge
+            chmod +x dist/ClickForge/ClickForge
+          fi
 
       - name: Smoke-test built binary
+        shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             pwsh -NoProfile -Command '$p = Start-Process -FilePath "dist\ClickForge\ClickForge.exe" -ArgumentList "--smoke-test" -Wait -PassThru; exit $p.ExitCode'
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            dist/ClickForge.app/Contents/MacOS/ClickForge_Mac --smoke-test
+            dist/ClickForge.app/Contents/MacOS/ClickForge --smoke-test
           else
-            chmod +x dist/ClickForge/ClickForge
-            xvfb-run -a dist/ClickForge/ClickForge --smoke-test
+            dist/ClickForge/ClickForge --smoke-test
           fi
-        shell: bash
 
       - name: Prepare Windows Artifact & Installer
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/ClickForge/* -DestinationPath ${{ matrix.asset_name }}
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) {
             $cmd = Get-Command iscc -ErrorAction SilentlyContinue
@@ -83,9 +108,14 @@ jobs:
             choco install innosetup -y
             $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
-          $ver = python -c "import clickforge; print(clickforge.__version__)"
+          $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
           & $iscc "/DAppVersion=$ver" "installer\ClickForge.iss"
           Copy-Item "dist\ClickForge-Setup.exe" "ClickForge-Setup.exe" -Force
+
+          # Include tiny migration marker in zip so v3.3.x in-app updater upgrades cleanly to v4.0.0
+          New-Item -ItemType Directory -Force -Path "dist\ClickForge\_internal" | Out-Null
+          New-Item -ItemType File -Force -Path "dist\ClickForge\_internal\.migrated" | Out-Null
+          Compress-Archive -Path dist/ClickForge/* -DestinationPath ${{ matrix.asset_name }} -Force
 
       - name: Prepare macOS Artifact
         if: runner.os == 'macOS'

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "3.3.2"
+  #define AppVersion "4.0.0"
 #endif
 
 #define AppName "ClickForge"
@@ -39,8 +39,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
+[InstallDelete]
+; Clean up Python/PyInstaller v3.x runtime folder when upgrading to native Rust v4.0+
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
-Source: "..\dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\{#AppName}\ClickForge.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"

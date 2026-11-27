@@ -1,0 +1,10 @@
+pub mod clicker;
+pub mod config;
+pub mod hotkeys;
+pub mod input_backend;
+pub mod installer;
+pub mod sound;
+pub mod system;
+pub mod timing;
+pub mod updater;
+pub mod validation;

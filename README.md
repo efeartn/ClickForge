@@ -4,9 +4,9 @@
 
 # ClickForge
 
-**High-precision, lightweight desktop auto-clicker for Windows, macOS, and Linux.**
+**High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux.**
 
-Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
+Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`, CoreGraphics, XTest), 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
 
 [![Latest Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=10A37F&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
@@ -48,15 +48,15 @@ Built with CustomTkinter, Win32 `SendInput`, 1 ms multimedia timing (`timeBeginP
 
 ---
 
-## Ready Out of the Box
+## Pure Native Performance (`v4.0.0 — "Ferrous"`)
 
-ClickForge opens into a compact, adaptive desktop utility engineered for crisp response and minimal memory footprint:
+Rewritten from the ground up in **Rust** for instant startup, minimal footprint, and deterministic click timing:
 
-- **Adaptive & Compact Workspace:** Inactive inputs (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) stay collapsed so the main window stays compact and fits comfortably on laptop and High-DPI displays.
-- **Follow Cursor by Default:** Clicks land wherever your pointer is immediately on launch (switch to **Fixed XY** + multi-monitor **Pick** anytime).
-- **`10 ms` (`~100 CPS`) Default Speed:** Snappy out of the box, scalable from 1 click/hour up to **`1,000 CPS`** (`1 ms` interval).
-- **Working `F6` Trigger & `Esc` Panic:** Press **`F6`** immediately on launch to start/stop (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the tactile keycap control, or hit **`Esc`** / fling pointer to `(0, 0)` for instant emergency stop.
-- **Low Overhead by Design:** Skips telemetry repaints while idle, uses zero-allocation hover tooltips (`1` transient popup only while hovered), frees full-size icon buffers immediately after startup, and boots in ~1.2 s without single-file extraction delays.
+- **Single Native Executable:** Ships as a standalone **`4.97 MB`** Windows executable with zero runtime dependencies or temporary bundle extraction.
+- **Instant Launch & Low Overhead:** Opens directly in **`~172 ms`**, pauses repaints down to idle cadence when settled, and draws crisp procedural vector header icons directly via GPU shaders.
+- **Adaptive & Compact Workspace:** Inactive sections (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) collapse automatically to keep the window compact on any display.
+- **Follow Cursor & `10 ms` Default:** Starts ready to click where your pointer is at `10 ms` (`~100 CPS`), scaling from `1 click/hour` up to **`1,000 CPS`** (`1 ms` interval).
+- **Working `F6` Trigger & `Esc` Panic:** Press **`F6`** immediately on launch (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the keycap control, or press **`Esc`** / fling the pointer to `(0, 0)` for instant emergency stop.
 
 ---
 
@@ -67,17 +67,17 @@ ClickForge opens into a compact, adaptive desktop utility engineered for crisp r
 | **Windows (Installer)** | [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) | **Recommended.** Installs to `%LOCALAPPDATA%\Programs\ClickForge`, adds Start Menu shortcuts & Windows Installed Apps entry with no UAC/admin prompt, and enables automatic self-updates. |
 | **Windows (Portable)** | [`ClickForge-Windows.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Windows.zip) | Extract and run `ClickForge.exe`. Includes a **Setup** button in the header to install into Windows Programs anytime. |
 | **macOS** | [`ClickForge-macOS.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-macOS.zip) | Unzip `ClickForge.app`. Grant **Accessibility** access under *System Settings → Privacy & Security* so global hotkeys and mouse injection work. |
-| **Linux (X11)** | [`ClickForge-Linux.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Linux.zip) | Unzip and run `./ClickForge`. Requires an X11 session for global keyboard/mouse hooks. |
+| **Linux (X11)** | [`ClickForge-Linux.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Linux.zip) | Unzip and run `./ClickForge`. Requires an X11 session for XTest injection and X11 Record global hotkeys. |
 
 ### Quick Start
 
 1. Run [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) (if Windows SmartScreen prompts on an unsigned release, click **More info → Run anyway**).
 2. Launch **ClickForge** from the Start Menu (`Follow Cursor`, `10 ms` / `~100 CPS`, and `F6` are ready immediately).
-3. Press **`F6`** (or click **START**) to start/stop clicking; press **`Esc`** or move the cursor to the top-left corner `(0, 0)` to panic-stop anytime.
+3. Press **`F6`** (or click **START**) to start/stop clicking; press **`Esc`** or move the cursor to `(0, 0)` to panic-stop anytime.
 
 ---
 
-## Presets & Features
+## Presets & Engine Architecture
 
 ### Built-in Presets
 
@@ -88,80 +88,71 @@ ClickForge opens into a compact, adaptive desktop utility engineered for crisp r
 | **Humanized** | `12 CPS` | Keeps current mode | `Left · 1x · Infinite` | `±15 % σ` jitter, `18–42 ms` hold duty, `±2 px` spread |
 | **Custom** | User-defined (`ms` / `sec` / `min` / `CPS`) | `Follow Cursor` or `Fixed XY` | `Left` / `Right` / `Middle` · `1x` / `2x` · `Infinite` / `Fixed` | Optional |
 
-### Precision & High-CPS Engine
-- **Windows `SendInput` Fast Path:** Pre-allocated `ctypes` `INPUT` structures avoid per-click allocation overhead, sustaining up to **`1,000 CPS`**.
-- **Sub-Millisecond Scheduler (`timing.py`):** Acquires `timeBeginPeriod(1)` only while clicking is active and pairs interruptible `Event.wait` with a light final spin (`1.5 ms` threshold).
-- **Thread-Safe Guaranteed Release:** Stopping mid-hold or closing during a run always emits `mouseUp` so mouse buttons never remain stuck.
-- **Humanizer in Every Mode:** Gaussian interval jitter (`± % σ`), triangular randomized hold duty (`ms`), and anchored disk coordinate **Spread (`± px`)** work in both **Follow Cursor** and **Fixed XY** modes without cursor drift.
-
-### Live Run Telemetry & Auto-Updater
-- **Live Run Readout:** Displays rolling 1-second **LIVE CPS** (resetting immediately to `0` when stopped), **Total** clicks (`Total: X / Y` for fixed-repeat runs), **Elapsed** run timer (`MM:SS.d`), live interval/CPS preview while typing, and schema-validated settings persisted per user via `platformdirs`.
-- **Cross-Platform Header Icons & Tooltips:** Crisp 2x vector icons rendered cleanly on Windows, macOS, and Linux (**Sound** cues, **System / Dark / Light** theme, **Always-on-Top** pin, manual **Update** check) plus hover tooltips across header controls, **Reset**, **Pick**, and **Hotkey**, and a Windows **Setup** button.
-- **Automatic Startup Update Check:** Checks GitHub Releases on launch, previews `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and installs rollback-safe updates automatically on frozen Windows builds (opens the release page on macOS, Linux, or source runs).
+### Precision Timing & Cross-Platform Backends
+- **Windows `SendInput` & `timeBeginPeriod(1)`:** Acquires 1 ms OS timer resolution via an RAII guard while running, pairing `Condvar::wait_timeout` with a final spin window to sustain up to **`1,000 CPS`**.
+- **macOS & Linux Native Backends:** Uses CoreGraphics (`CGEventCreateMouseEvent` / `CGEventTapCreate`) on macOS and `x11rb` (`xtest` + `record`) on Linux X11 with zero external runtime dependencies.
+- **Guaranteed Button Release:** Stopping mid-hold or exiting mid-run always emits `mouseUp` so buttons never stick.
+- **Anchored Humanizer Spread:** Uniform-disk coordinate **Spread (`± px`)** works in both **Follow Cursor** and **Fixed XY** without cumulative cursor drift.
+- **Verified In-App Auto-Updater:** Checks GitHub Releases via `ureq` + `rustls`, displays formatted `"What's New"` release notes, verifies byte size + **`SHA-256`** digest, and safely swaps Windows builds with `.cfbak` rollback.
 
 ---
 
-## Run from Source
+## Build from Source
 
-Requires **Python 3.9+** (CI verified on **Python 3.11**; local development tested up to **3.13**).
+Requires the **Rust stable toolchain** ([rustup.rs](https://rustup.rs/)).
 
 ```bash
 git clone https://github.com/efeartn/ClickForge.git
 cd ClickForge
-pip install -r requirements.txt
-python main.py
+cargo run --release
 ```
 
-Run tests:
+On Debian/Ubuntu Linux, install the X11 & OpenGL development headers first:
 
 ```bash
-python -m unittest discover -v tests
+sudo apt-get install -y libgl1-mesa-dev libegl1-mesa-dev libx11-dev libxkbcommon-dev libxkbcommon-x11-dev libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev
 ```
 
-Build release bundle (`ClickForge-Windows.zip` and, with Inno Setup 6, `ClickForge-Setup.exe`):
+Run tests and smoke checks:
 
 ```bash
-python build.py --zip --installer
+cargo test
+cargo run --release -- --smoke-test
 ```
 
 ---
 
-## Architecture
+## Project Layout
 
 ```text
 ClickForge/
-├── clickforge/
-│   ├── __init__.py             # App name, version, and release codename
-│   ├── __main__.py             # Module entrypoint (`python -m clickforge`)
-│   ├── app.py                  # Window launch entrypoint
+├── src/
+│   ├── main.rs                 # Entrypoint, CLI (--version / --smoke-test), eframe setup
+│   ├── meta.rs                 # App name, version (4.0.0), codename (Ferrous), embedded icon
 │   ├── core/
-│   │   ├── clicker.py          # Worker thread engine, Humanizer, corner failsafe
-│   │   ├── config.py           # Schema-validated persistent config & profile presets
-│   │   ├── hotkeys.py          # Global keyboard & Mouse4/5 listener with VK normalization
-│   │   ├── input_backend.py    # Win32 SendInput backend + pynput fallback
-│   │   ├── installer.py        # Windows Programs & Start Menu installer helpers
-│   │   ├── sound.py            # Non-blocking start/stop chimes
-│   │   ├── system.py           # DPI awareness, multi-monitor bounds, asset paths
-│   │   ├── timing.py           # HighResolutionTimer + precision wait_until
-│   │   ├── updater.py          # GitHub Releases updater with SHA-256 & rollback
-│   │   └── validation.py       # Numeric parsing and speed/unit conversions
+│   │   ├── clicker.rs          # Lock-free telemetry, Humanizer worker, corner failsafe
+│   │   ├── config.rs           # Schema-validated persistent config & profile presets
+│   │   ├── hotkeys.rs          # Global keyboard & Mouse4/5 listeners (Win32 / macOS / X11)
+│   │   ├── input_backend.rs    # Native mouse injection (SendInput / CoreGraphics / XTest)
+│   │   ├── installer.rs        # Windows Programs & Start Menu installer integration
+│   │   ├── sound.rs            # Non-blocking start/stop chimes
+│   │   ├── system.rs           # Multi-monitor bounds, permission checks, cleanup
+│   │   ├── timing.rs           # RAII 1 ms timer guard & precision wait primitives
+│   │   ├── updater.rs          # GitHub Releases updater with SHA-256 & rollback
+│   │   └── validation.rs       # Numeric filters and speed/unit conversions
 │   └── ui/
-│       ├── icons.py            # Cached 4x-supersampled cross-platform vector header icons
-│       ├── main_window.py      # Primary adaptive window & idle-relaxed poll loop
-│       ├── picker.py           # Multi-monitor fixed XY coordinate picker overlay
-│       ├── theme.py            # Light/Dark Carbon & Precision Emerald palette tokens
-│       └── widgets.py          # Cards, pills, keycap button, shared tooltips, dialogs
-├── docs/
-│   └── screenshots/            # Dark, light, Windows setup, and updater previews
-├── installer/
-│   └── ClickForge.iss          # Inno Setup 6 script for ClickForge-Setup.exe
-├── scripts/
-│   └── generate_assets.py      # Vector-rendered app icons (.ico, .icns, .png, .svg)
-├── tests/
-│   └── test_clickforge.py      # Unit & UI test suite
+│       ├── app.rs              # Adaptive main window, banners & Carbon modals
+│       ├── icons.rs            # Procedural vector header icons
+│       ├── picker.rs           # Full-desktop transparent crosshair coordinate picker
+│       ├── theme.rs            # Carbon & Precision Emerald dark/light tokens & fonts
+│       └── widgets.rs          # Segmented pills, keycap button, toggle switch, numeric fields
+├── assets/                     # App icons (.ico, .icns, .png, .svg)
+├── docs/screenshots/           # Dark, light, Windows setup, and updater previews
+├── installer/ClickForge.iss    # Inno Setup 6 script for ClickForge-Setup.exe
+├── Cargo.toml                  # Crate manifest and release optimization profile
+├── build.rs                    # Windows resource & icon embedding
 ├── CHANGELOG.md
-├── CONTRIBUTING.md
-└── pyproject.toml
+└── CONTRIBUTING.md
 ```
 
 ---

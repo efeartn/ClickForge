@@ -2,6 +2,16 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [4.0.0] - 2026-11-27 — "Ferrous"
+
+### Changed (Complete Pure Rust Migration)
+- **Full Rust Rewrite (`egui` / `eframe`)**: Migrated ClickForge completely from Python + CustomTkinter + PyInstaller to a pure native Rust binary (`4.97 MB` standalone Windows executable, `~172 ms` startup, zero Python runtime or `_internal/` directory).
+- **Native Per-OS Input & Hotkey Engines**:
+  - **Windows**: Direct Win32 `SendInput` (`INJECTED_MARKER` tagging), `SetCursorPos`/`GetCursorPos`, RAII `timeBeginPeriod(1)` multimedia timing, `WH_KEYBOARD_LL` + on-demand `WH_MOUSE_LL` hooks (`Mouse4`/`Mouse5`), and native registry + Start Menu Programs integration.
+  - **macOS**: Direct CoreGraphics (`CGEventCreateMouseEvent` / `CGEventPost` / `CGEventTapCreate`) mouse injection, multi-monitor `CGDisplayBounds`, and listen-only global hotkeys.
+  - **Linux (X11)**: Direct `x11rb` XTest input injection and X11 Record extension global hotkeys with headless-safe fallback.
+- **Preserved Carbon & Precision Emerald UX**: Procedural vector header icons (`src/ui/icons.rs`), adaptive compact window sizing, live `LIVE CPS` telemetry + `MM:SS.d` elapsed duration, `Default` (`10 ms`, `Follow Cursor`), `Fast`, `Humanized`, and `Custom` presets, anchored zero-drift Humanizer spread, fullscreen crosshair coordinate picker, and `v3.3.x -> v4.0.0` seamless auto-updater & Inno Setup migration (cleaning obsolete `_internal/` folders automatically).
+
 ## [3.3.2] - 2026-11-22 — "Carbon"
 
 ### Fixed
