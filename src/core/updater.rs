@@ -234,6 +234,7 @@ where
 
     let resp = http_agent()
         .get(&asset.url)
+        .set("Accept-Encoding", "identity")
         .call()
         .map_err(|e| format!("Download failed: {e}"))?;
 
@@ -388,65 +389,122 @@ pub fn stage_update(zip_path: &Path, workdir: &Path) -> Result<PathBuf, String> 
 }
 
 #[cfg(target_os = "windows")]
-const APPLY_UPDATE_CMD: &str = r#"@echo off
-setlocal EnableExtensions DisableDelayedExpansion
-set "LOG=%CF_WORK%\update.log"
-echo ClickForge updater started > "%LOG%"
-set /a TRIES=0
+const APPLY_UPDATE_PS1: &str = r#"$ErrorActionPreference = 'Stop'
+$cfPid = [int]$env:CF_PID
+$srcDir = $env:CF_SRC
+$dstDir = $env:CF_DST
+$exeName = $env:CF_EXE
+$workDir = $env:CF_WORK
+$newVer = $env:CF_VER
+$noRelaunch = ($env:CF_NO_RELAUNCH -eq '1')
+$log = Join-Path $workDir 'update.log'
 
-:wait
-tasklist /FI "PID eq %CF_PID%" /FO CSV /NH 2>nul | findstr /R /C:",.%CF_PID%.," >nul
-if errorlevel 1 goto swap
-set /a TRIES+=1
-if %TRIES% GEQ 90 goto give_up
-ping -n 2 127.0.0.1 >nul
-goto wait
+function Write-Log([string]$msg) {
+    $ts = (Get-Date).ToString('HH:mm:ss.fff')
+    Add-Content -LiteralPath $log -Value "[$ts] $msg" -Encoding ASCII
+}
 
-:swap
-echo Replacing %CF_DST%\%CF_EXE% >> "%LOG%"
-if exist "%CF_DST%\%CF_EXE%.cfbak" del /f /q "%CF_DST%\%CF_EXE%.cfbak" >nul 2>&1
-copy /y "%CF_DST%\%CF_EXE%" "%CF_DST%\%CF_EXE%.cfbak" >> "%LOG%" 2>&1
+Set-Content -LiteralPath $log -Value 'ClickForge updater started' -Encoding ASCII
 
-set /a COPY_TRIES=0
-:copy_new
-copy /y "%CF_SRC%\ClickForge.exe" "%CF_DST%\%CF_EXE%" >> "%LOG%" 2>&1
-if not errorlevel 1 goto swapped
-set /a COPY_TRIES+=1
-if %COPY_TRIES% GEQ 6 goto rollback
-ping -n 2 127.0.0.1 >nul
-goto copy_new
+if ($cfPid -gt 0) {
+    try {
+        $proc = [System.Diagnostics.Process]::GetProcessById($cfPid)
+        Write-Log "Waiting for PID $cfPid to exit..."
+        if (-not $proc.WaitForExit(30000)) {
+            Write-Log "PID $cfPid did not exit in 30s; forcing stop"
+            try { $proc.Kill() } catch {}
+            $proc.WaitForExit(5000) | Out-Null
+        }
+    } catch {
+        Write-Log "PID $cfPid already exited"
+    }
+}
 
-:swapped
-if exist "%CF_DST%\_internal" rmdir /s /q "%CF_DST%\_internal" >nul 2>&1
-del /f /q "%CF_DST%\%CF_EXE%.cfbak" >nul 2>&1
-echo Update installed >> "%LOG%"
-start "" /D "%CF_DST%" "%CF_DST%\%CF_EXE%"
-rmdir /s /q "%CF_WORK%\staged" >nul 2>&1
-del /f /q "%CF_WORK%\*.zip" >nul 2>&1
-goto done
+$dstExe = Join-Path $dstDir $exeName
+$srcExe = Join-Path $srcDir 'ClickForge.exe'
+$bakExe = "$dstExe.cfbak"
 
-:rollback
-echo Install failed, rolling back >> "%LOG%"
-copy /y "%CF_DST%\%CF_EXE%.cfbak" "%CF_DST%\%CF_EXE%" >> "%LOG%" 2>&1
-del /f /q "%CF_DST%\%CF_EXE%.cfbak" >nul 2>&1
+$stem = [System.IO.Path]::GetFileNameWithoutExtension($exeName)
+Get-Process -Name $stem -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+        if ($_.Id -ne $cfPid -and $_.MainModule.FileName -ieq $dstExe) {
+            Write-Log "Closing running instance PID $($_.Id)"
+            $_.CloseMainWindow() | Out-Null
+            if (-not $_.WaitForExit(3000)) { $_.Kill() }
+        }
+    } catch {}
+}
 
-:give_up
-echo Update aborted >> "%LOG%"
-start "" /D "%CF_DST%" "%CF_DST%\%CF_EXE%"
+$expectedHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $srcExe).Hash
+$swapped = $false
 
-:done
-endlocal
-(goto) 2>nul & del "%~f0"
+for ($try = 1; $try -le 15; $try++) {
+    try {
+        if (Test-Path -LiteralPath $bakExe) {
+            Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $dstExe) {
+            Move-Item -LiteralPath $dstExe -Destination $bakExe -Force
+        }
+        Copy-Item -LiteralPath $srcExe -Destination $dstExe -Force
+        $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dstExe).Hash
+        if ($actualHash -ne $expectedHash) {
+            throw "SHA-256 mismatch ($actualHash != $expectedHash)"
+        }
+        $swapped = $true
+        break
+    } catch {
+        Write-Log "Attempt $try failed: $($_.Exception.Message)"
+        if (Test-Path -LiteralPath $bakExe) {
+            try { Copy-Item -LiteralPath $bakExe -Destination $dstExe -Force } catch {}
+        }
+        Start-Sleep -Milliseconds 300
+    }
+}
+
+if ($swapped) {
+    $legacyInternal = Join-Path $dstDir '_internal'
+    if (Test-Path -LiteralPath $legacyInternal) {
+        Remove-Item -LiteralPath $legacyInternal -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+    if ($newVer) {
+        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge'
+        if (Test-Path $regPath) {
+            try { Set-ItemProperty -Path $regPath -Name 'DisplayVersion' -Value $newVer } catch {}
+        }
+    }
+    Write-Log 'Update installed'
+    if (-not $noRelaunch) {
+        Start-Process -FilePath $dstExe -WorkingDirectory $dstDir
+    }
+    Remove-Item -LiteralPath (Join-Path $workDir 'staged') -Recurse -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $workDir -Filter '*.zip' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Log 'Update aborted; restoring backup'
+    if (Test-Path -LiteralPath $bakExe) {
+        try { Copy-Item -LiteralPath $bakExe -Destination $dstExe -Force } catch {}
+        Remove-Item -LiteralPath $bakExe -Force -ErrorAction SilentlyContinue
+    }
+    if (-not $noRelaunch -and (Test-Path -LiteralPath $dstExe)) {
+        Start-Process -FilePath $dstExe -WorkingDirectory $dstDir
+    }
+}
+
+$self = $MyInvocation.MyCommand.Path
+if ($self -and (Test-Path -LiteralPath $self)) {
+    Remove-Item -LiteralPath $self -Force -ErrorAction SilentlyContinue
+}
 "#;
 
-pub fn launch_self_updater(staged_app: &Path, workdir: &Path) -> Result<(), String> {
+pub fn launch_self_updater(staged_app: &Path, workdir: &Path, new_version: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         use std::process::{Command, Stdio};
 
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
         let dst = exe.parent().ok_or("Missing install directory")?;
@@ -455,19 +513,29 @@ pub fn launch_self_updater(staged_app: &Path, workdir: &Path) -> Result<(), Stri
             .and_then(|s| s.to_str())
             .unwrap_or("ClickForge.exe");
 
-        let script = workdir.join("apply_update.cmd");
-        fs::write(&script, APPLY_UPDATE_CMD.replace('\n', "\r\n"))
+        let script = workdir.join("apply_update.ps1");
+        let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
+        fs::write(&script, normalized)
             .map_err(|e| format!("Failed writing updater helper: {e}"))?;
 
-        let comspec = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
-        Command::new(comspec)
-            .args(["/c", &script.to_string_lossy()])
+        Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &script.to_string_lossy(),
+            ])
             .env("CF_PID", std::process::id().to_string())
             .env("CF_SRC", staged_app.to_string_lossy().as_ref())
             .env("CF_DST", dst.to_string_lossy().as_ref())
             .env("CF_EXE", exe_name)
             .env("CF_WORK", workdir.to_string_lossy().as_ref())
-            .creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS)
+            .env("CF_VER", new_version)
+            .creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -478,7 +546,7 @@ pub fn launch_self_updater(staged_app: &Path, workdir: &Path) -> Result<(), Stri
 
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (staged_app, workdir);
+        let _ = (staged_app, workdir, new_version);
         Err("In-place updates are only supported on Windows.".to_string())
     }
 }
@@ -534,5 +602,66 @@ mod tests {
         let md = "### Highlights\n- **Fast:** `1,000 CPS`\n\n";
         let clean = format_release_notes(md);
         assert_eq!(clean, "Highlights\n• Fast: 1,000 CPS");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_self_updater_swaps_and_verifies_exe() {
+        use std::os::windows::process::CommandExt;
+        use std::process::{Command, Stdio};
+
+        let root = std::env::temp_dir().join("clickforge_test_ps1_swap");
+        let _ = fs::remove_dir_all(&root);
+        let dst = root.join("dst");
+        let src = root.join("src");
+        let work = root.join("work");
+        let legacy_internal = dst.join("_internal");
+        fs::create_dir_all(&legacy_internal).unwrap();
+        fs::create_dir_all(&src).unwrap();
+        fs::create_dir_all(&work).unwrap();
+
+        let dst_exe = dst.join("ClickForge.exe");
+        let src_exe = src.join("ClickForge.exe");
+        fs::write(&dst_exe, b"OLD_BINARY_PAYLOAD").unwrap();
+        fs::write(&legacy_internal.join("stale.dll"), b"OLD_RUNTIME").unwrap();
+        fs::write(&src_exe, b"NEW_NATIVE_RUST_BINARY_V4_1_1").unwrap();
+
+        let script = work.join("apply_update.ps1");
+        let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
+        fs::write(&script, normalized).unwrap();
+
+        let status = Command::new("powershell.exe")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle",
+                "Hidden",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                &script.to_string_lossy(),
+            ])
+            .env("CF_PID", "999999")
+            .env("CF_SRC", src.to_string_lossy().as_ref())
+            .env("CF_DST", dst.to_string_lossy().as_ref())
+            .env("CF_EXE", "ClickForge.exe")
+            .env("CF_WORK", work.to_string_lossy().as_ref())
+            .env("CF_VER", "")
+            .env("CF_NO_RELAUNCH", "1")
+            .creation_flags(0x0800_0000)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("powershell updater failed to launch");
+
+        assert!(status.success());
+        assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V4_1_1");
+        assert!(!dst.join("ClickForge.exe.cfbak").exists());
+        assert!(!legacy_internal.exists());
+        let log = fs::read_to_string(work.join("update.log")).unwrap();
+        assert!(log.contains("Update installed"), "unexpected log: {log}");
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

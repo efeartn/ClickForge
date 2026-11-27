@@ -128,7 +128,7 @@ pub fn startup_warnings() -> Vec<String> {
     warnings
 }
 
-/// Remove the temporary `_internal/.migrated` folder if we upgraded in-place from Python v3.x.
+/// Remove legacy `_internal/.migrated` markers or leftover `.cfbak` files after an update.
 pub fn cleanup_legacy_migration_marker() {
     let Ok(exe) = std::env::current_exe() else {
         return;
@@ -139,6 +139,12 @@ pub fn cleanup_legacy_migration_marker() {
     let internal = dir.join("_internal");
     if internal.is_dir() && internal.join(".migrated").is_file() {
         let _ = fs::remove_dir_all(&internal);
+    }
+    if let Some(name) = exe.file_name().and_then(|s| s.to_str()) {
+        let bak = dir.join(format!("{name}.cfbak"));
+        if bak.is_file() {
+            let _ = fs::remove_file(&bak);
+        }
     }
 }
 

@@ -121,6 +121,7 @@ enum AppEvent {
     UpdateFound(ReleaseInfo, bool),
     UpdateError(String, bool),
     UpdateProgress(u64, u64),
+    UpdateExtracting,
     UpdateReady(PathBuf, PathBuf, ReleaseInfo),
     SetupProgress(u64, u64),
     SetupDone(&'static str, PathBuf),
@@ -204,6 +205,7 @@ pub struct ClickForgeApp {
     startup_check_at: Option<Instant>,
     update_busy: bool,
     setup_busy: bool,
+    applying_update: bool,
     update_release: Option<ReleaseInfo>,
     staged_update: Option<(PathBuf, PathBuf, ReleaseInfo)>,
     transfer_cancel: Option<Arc<AtomicBool>>,
@@ -344,6 +346,7 @@ impl ClickForgeApp {
             startup_check_at,
             update_busy: false,
             setup_busy: false,
+            applying_update: false,
             update_release: None,
             staged_update: None,
             transfer_cancel: None,
@@ -644,6 +647,13 @@ impl ClickForgeApp {
                         }
                     }
                 }
+                AppEvent::UpdateExtracting => {
+                    if let Some(b) = &mut self.banner {
+                        b.progress = Some(1.0);
+                        b.detail = "Verifying & extracting update...".to_string();
+                        b.actions.clear();
+                    }
+                }
                 AppEvent::UpdateReady(staged, workdir, release) => {
                     self.update_busy = false;
                     self.transfer_cancel = None;
@@ -730,7 +740,7 @@ impl ClickForgeApp {
         if let Some(when) = self.startup_check_at {
             if Instant::now() >= when {
                 self.startup_check_at = None;
-                self.check_for_updates(false);
+                self.check_for_updates(false, ctx);
             }
         }
         if !self.platform_warnings_checked {
@@ -749,8 +759,8 @@ impl ClickForgeApp {
         ctx.input(|_| {});
     }
 
-    fn check_for_updates(&mut self, manual: bool) {
-        if self.update_busy {
+    fn check_for_updates(&mut self, manual: bool, ctx: &egui::Context) {
+        if self.update_busy || self.applying_update {
             return;
         }
         if manual {
@@ -787,20 +797,24 @@ impl ClickForgeApp {
         }
 
         let tx = self.events_tx.clone();
+        let repaint = ctx.clone();
         thread::Builder::new()
             .name("ClickForge-UpdateCheck".to_string())
-            .spawn(move || match updater::fetch_latest() {
-                Ok(rel) => {
-                    let _ = tx.send(AppEvent::UpdateFound(rel, manual));
+            .spawn(move || {
+                match updater::fetch_latest() {
+                    Ok(rel) => {
+                        let _ = tx.send(AppEvent::UpdateFound(rel, manual));
+                    }
+                    Err(err) => {
+                        let _ = tx.send(AppEvent::UpdateError(err, manual));
+                    }
                 }
-                Err(err) => {
-                    let _ = tx.send(AppEvent::UpdateError(err, manual));
-                }
+                repaint.request_repaint();
             })
             .ok();
     }
 
-    fn start_update_install(&mut self) {
+    fn start_update_install(&mut self, ctx: &egui::Context) {
         let Some(rel) = self.update_release.clone() else {
             let _ = open::that(updater::releases_page_url());
             return;
@@ -815,11 +829,29 @@ impl ClickForgeApp {
             return;
         };
 
+        let ver_text = rel.version_text();
+        if let Some((staged, _, cached_rel)) = &self.staged_update {
+            if cached_rel.version_text() == ver_text && staged.join("ClickForge.exe").is_file() {
+                self.banner = Some(BannerState {
+                    title: format!("Update v{ver_text} ready to install"),
+                    detail: "Click Restart & Update to apply and relaunch.".to_string(),
+                    tone: BannerTone::Accent,
+                    progress: Some(1.0),
+                    actions: vec![
+                        ("Later", BannerAction::Later, false),
+                        ("Restart & Update", BannerAction::RestartAndUpdate, true),
+                    ],
+                    auto_hide_at: None,
+                });
+                return;
+            }
+        }
+
         self.update_busy = true;
         let cancel = Arc::new(AtomicBool::new(false));
         self.transfer_cancel = Some(Arc::clone(&cancel));
         self.banner = Some(BannerState {
-            title: format!("Downloading ClickForge v{}...", rel.version_text()),
+            title: format!("Downloading ClickForge v{ver_text}..."),
             detail: "Connecting to GitHub Releases...".to_string(),
             tone: BannerTone::Accent,
             progress: Some(0.0),
@@ -828,10 +860,11 @@ impl ClickForgeApp {
         });
 
         let tx = self.events_tx.clone();
+        let repaint = ctx.clone();
         thread::Builder::new()
             .name("ClickForge-UpdateDownload".to_string())
             .spawn(move || {
-                let workdir = std::env::temp_dir().join("clickforge-update");
+                let workdir = std::env::temp_dir().join(format!("ClickForge-update-{ver_text}"));
                 let mut last_emit = Instant::now();
                 let res = updater::download_asset(
                     &asset,
@@ -842,23 +875,29 @@ impl ClickForgeApp {
                         {
                             last_emit = Instant::now();
                             let _ = tx.send(AppEvent::UpdateProgress(got, total));
+                            repaint.request_repaint();
                         }
                     },
                     &cancel,
                 );
                 match res {
-                    Ok(zip_path) => match updater::stage_update(&zip_path, &workdir) {
-                        Ok(staged) => {
-                            let _ = tx.send(AppEvent::UpdateReady(staged, workdir, rel));
+                    Ok(zip_path) => {
+                        let _ = tx.send(AppEvent::UpdateExtracting);
+                        repaint.request_repaint();
+                        match updater::stage_update(&zip_path, &workdir) {
+                            Ok(staged) => {
+                                let _ = tx.send(AppEvent::UpdateReady(staged, workdir, rel));
+                            }
+                            Err(e) => {
+                                let _ = tx.send(AppEvent::UpdateError(e, true));
+                            }
                         }
-                        Err(e) => {
-                            let _ = tx.send(AppEvent::UpdateError(e, true));
-                        }
-                    },
+                    }
                     Err(e) => {
                         let _ = tx.send(AppEvent::UpdateError(e, true));
                     }
                 }
+                repaint.request_repaint();
             })
             .ok();
     }
@@ -867,28 +906,38 @@ impl ClickForgeApp {
         match action {
             BannerAction::UpdateNow => {
                 self.banner = None;
-                self.start_update_install();
+                self.start_update_install(ctx);
             }
             BannerAction::RestartAndUpdate => {
-                if let Some((staged, workdir, _)) = self.staged_update.take() {
-                    if let Err(err) = updater::launch_self_updater(&staged, &workdir) {
-                        self.banner = Some(BannerState {
-                            title: "Could not restart updater".to_string(),
-                            detail: err,
-                            tone: BannerTone::Danger,
-                            progress: None,
-                            actions: vec![
-                                ("Releases", BannerAction::OpenReleases, false),
-                                ("Dismiss", BannerAction::Dismiss, false),
-                            ],
-                            auto_hide_at: None,
-                        });
-                    } else {
-                        self.stop_clicking(true);
-                        self.hotkeys.stop();
-                        let _ = self.config.save();
-                        ctx.send_viewport_cmd(ViewportCommand::Close);
-                    }
+                if self.applying_update {
+                    return;
+                }
+                let launch_res = {
+                    let Some((staged, workdir, rel)) = self.staged_update.as_ref() else {
+                        return;
+                    };
+                    let ver = rel.version_text();
+                    updater::launch_self_updater(staged, workdir, &ver)
+                };
+                if let Err(err) = launch_res {
+                    self.banner = Some(BannerState {
+                        title: "Could not restart updater".to_string(),
+                        detail: err,
+                        tone: BannerTone::Danger,
+                        progress: None,
+                        actions: vec![
+                            ("Releases", BannerAction::OpenReleases, false),
+                            ("Dismiss", BannerAction::Dismiss, false),
+                        ],
+                        auto_hide_at: None,
+                    });
+                } else {
+                    self.applying_update = true;
+                    self.staged_update = None;
+                    self.stop_clicking(true);
+                    self.hotkeys.stop();
+                    let _ = self.config.save();
+                    ctx.send_viewport_cmd(ViewportCommand::Close);
                 }
             }
             BannerAction::Later | BannerAction::Dismiss => {
@@ -905,6 +954,8 @@ impl ClickForgeApp {
                 if let Some(c) = &self.transfer_cancel {
                     c.store(true, std::sync::atomic::Ordering::Release);
                 }
+                self.update_busy = false;
+                self.setup_busy = false;
                 self.banner = None;
             }
             BannerAction::OpenReleases => {
@@ -928,7 +979,13 @@ impl ClickForgeApp {
         }
     }
 
-    fn run_windows_setup(&mut self, desktop_shortcut: bool, has_local: bool, portable_ok: bool) {
+    fn run_windows_setup(
+        &mut self,
+        ctx: &egui::Context,
+        desktop_shortcut: bool,
+        has_local: bool,
+        portable_ok: bool,
+    ) {
         self.modal = None;
         if self.setup_busy {
             return;
@@ -956,6 +1013,7 @@ impl ClickForgeApp {
 
         self.setup_busy = true;
         let tx = self.events_tx.clone();
+        let repaint = ctx.clone();
         if portable_ok {
             self.banner = Some(BannerState {
                 title: "Installing ClickForge to Programs...".to_string(),
@@ -967,13 +1025,16 @@ impl ClickForgeApp {
             });
             thread::Builder::new()
                 .name("ClickForge-Setup".to_string())
-                .spawn(move || match installer::install_portable_to_programs(desktop_shortcut) {
-                    Ok(p) => {
-                        let _ = tx.send(AppEvent::SetupDone("portable", p));
+                .spawn(move || {
+                    match installer::install_portable_to_programs(desktop_shortcut) {
+                        Ok(p) => {
+                            let _ = tx.send(AppEvent::SetupDone("portable", p));
+                        }
+                        Err(e) => {
+                            let _ = tx.send(AppEvent::SetupError(e));
+                        }
                     }
-                    Err(e) => {
-                        let _ = tx.send(AppEvent::SetupError(e));
-                    }
+                    repaint.request_repaint();
                 })
                 .ok();
             return;
@@ -1000,6 +1061,7 @@ impl ClickForgeApp {
                         {
                             last_emit = Instant::now();
                             let _ = tx.send(AppEvent::SetupProgress(got, total));
+                            repaint.request_repaint();
                         }
                     },
                     &cancel,
@@ -1012,6 +1074,7 @@ impl ClickForgeApp {
                         let _ = tx.send(AppEvent::SetupError(e));
                     }
                 }
+                repaint.request_repaint();
             })
             .ok();
     }
@@ -1074,7 +1137,7 @@ impl ClickForgeApp {
                 )
                 .clicked()
                 {
-                    self.check_for_updates(true);
+                    self.check_for_updates(true, ctx);
                 }
 
                 let pin_kind = if self.config.always_on_top {
@@ -2101,10 +2164,10 @@ impl ClickForgeApp {
             }
         }
         if pending_update_start {
-            self.start_update_install();
+            self.start_update_install(ctx);
         }
         if let Some((desk, local, portable)) = pending_setup_run {
-            self.run_windows_setup(desk, local, portable);
+            self.run_windows_setup(ctx, desk, local, portable);
         }
     }
 }

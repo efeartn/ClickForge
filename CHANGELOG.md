@@ -2,6 +2,13 @@
 
 All notable changes to **ClickForge** are documented in this file.
 
+## [4.1.1] - 2026-11-27 — "Ferrous"
+
+### Fixed
+- **Windows In-App Auto-Updater Reliability (`src/core/updater.rs`, `src/ui/app.rs`)**:
+  - Replaced the fragile `cmd.exe` + `CREATE_NO_WINDOW | DETACHED_PROCESS` helper (`tasklist | findstr`) with a dedicated PowerShell updater (`apply_update.ps1`, `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`) using kernel `Process.WaitForExit(30000)`, atomic `.cfbak` rename-then-copy swap with retries, post-copy `SHA-256` verification, automatic Windows `Uninstall\ClickForge` `DisplayVersion` registry update, and rollback protection.
+  - Added immediate `egui::Context::request_repaint()` notifications across all background update/setup threads, per-version temp staging folders, explicit `Accept-Encoding: identity` download header, `UpdateExtracting` progress feedback, `applying_update` re-entrancy protection, and startup cleanup of any leftover `.cfbak` files.
+
 ## [4.1.0] - 2026-11-27 — "Ferrous"
 
 ### Added

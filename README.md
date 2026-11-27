@@ -48,7 +48,7 @@ Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`
 
 ---
 
-## Pure Native Performance (`v4.1.0 — "Ferrous"`)
+## Pure Native Performance (`v4.1.1 — "Ferrous"`)
 
 Rewritten from the ground up in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
 

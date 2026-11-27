@@ -1,6 +1,6 @@
 [package]
 name = "clickforge"
-version = "4.1.0"
+version = "4.1.1"
 edition = "2021"
 license = "GPL-3.0"
 description = "High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux."
