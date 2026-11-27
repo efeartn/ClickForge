@@ -770,7 +770,7 @@ mod platform {
     use std::thread::{self, JoinHandle};
     use x11rb::connection::Connection;
     use x11rb::protocol::record::{
-        self, ConnectionExt as _, ClientSpec, Range, Range8, ExtRange, Range16,
+        self, ConnectionExt as _, CS, ExtRange, Range, Range16, Range8,
     };
     use x11rb::protocol::xproto::ConnectionExt as _;
 
@@ -882,7 +882,7 @@ mod platform {
                         client_died: false,
                     };
                     if data_conn
-                        .record_create_context(ctx, 0, &[ClientSpec::ALL_CLIENTS.into()], &[range])
+                        .record_create_context(ctx, 0, &[u32::from(CS::ALL_CLIENTS)], &[range])
                         .is_err()
                     {
                         return;
