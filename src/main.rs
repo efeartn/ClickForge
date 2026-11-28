@@ -16,7 +16,7 @@ use crate::core::hotkeys::normalize_binding;
 use crate::core::input_backend::DummyBackend;
 use crate::core::system::cleanup_legacy_migration_marker;
 use crate::core::updater::parse_version;
-use crate::meta::{APP_NAME, CODENAME, ICON_PNG, VERSION};
+use crate::meta::{APP_NAME, ICON_PNG, VERSION};
 use crate::ui::app::{KlickApp, StartupOptions};
 use crate::ui::widgets::WINDOW_WIDTH;
 
@@ -50,7 +50,7 @@ fn run_smoke_test() -> i32 {
     let _cfg = AppConfig::default();
     let _ = writeln!(
         std::io::stdout(),
-        "{APP_NAME} v{VERSION} ({CODENAME}) smoke-test OK"
+        "{APP_NAME} v{VERSION} smoke-test OK"
     );
     0
 }
@@ -69,7 +69,7 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.iter().any(|a| a == "--version" || a == "-V") {
-        let _ = writeln!(std::io::stdout(), "{APP_NAME} v{VERSION} ({CODENAME})");
+        let _ = writeln!(std::io::stdout(), "{APP_NAME} v{VERSION}");
         return Ok(());
     }
     if args.iter().any(|a| a == "--smoke-test") {

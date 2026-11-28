@@ -1,18 +1,26 @@
 # Changelog
 
-All notable changes to **Klick** (formerly **ClickForge**) are documented in this file.
+All notable changes to **Klick** are documented in this file.
 
-## [4.2.0] - 2026-11-28 — "Ferrous"
+## [1.0.0] - 2026-11-28
 
-### Changed (Minimalist Rebrand: ClickForge -> Klick)
-- **Renamed Application to `Klick`**: Updated package (`klick`), binary (`Klick` / `Klick.exe` / `Klick.app`), Inno Setup installer (`installer/Klick.iss` -> `Klick-Setup.exe`), Windows Programs & Registry entries, Linux uinput/udev naming (`99-klick.rules`), GitHub Releases workflow, and documentation to `Klick` (`efeartn/Klick`).
-- **Seamless Config Migration**: Automatically imports existing `ClickForge/config.json` settings into `Klick/config.json` on first launch so presets, hotkeys, and preferences carry over automatically.
+### Added & Changed
+- **Klick Initial Release (Rebranded from ClickForge)**: Pure native Rust (`egui` / `eframe`) auto-clicker shipping as a standalone `~5 MB` executable with zero runtime dependencies and no version codenames.
+- **Cross-Platform Native Engines**:
+  - **Windows**: `SendInput` + `timeBeginPeriod(1)` 1 ms multimedia timer, `WH_KEYBOARD_LL` + on-demand `WH_MOUSE_LL` (`Mouse4`/`Mouse5`) triggers, per-user Programs & Start Menu installer (`Klick-Setup.exe`), and verified PowerShell in-place updater.
+  - **macOS**: CoreGraphics (`CGEventCreateMouseEvent` / `CGEventPost` / `CGEventTapCreate`) with multi-monitor `CGDisplayBounds`.
+  - **Linux (Wayland / Hyprland & X11)**: `/dev/uinput` + `/dev/input/event*` `evdev` hotkeys + Hyprland socket IPC (`movecursor`, `cursorpos`, `j/monitors`) with automatic X11 (`XTest` + `RECORD`) fallback.
+- **Seamless Legacy Migration**: Automatically imports existing `ClickForge/config.json` settings into `Klick/config.json` on first run.
 
 ### Fixed
-- **Banner & Modal Action Bar Height Bug (`src/ui/app.rs`)**: Replaced bare `Layout::right_to_left(Align::Center)` inside vertical containers in `render_banner()` and `SetupPrompt` with bounded-height rows (`allocate_ui_with_layout`), fixing the bug where banners stretched vertically across the entire window and pushed all cards off-screen.
-- **Windows AltSnap Compatibility (`src/main.rs`, `src/ui/app.rs`)**: Restored standard resizable Win32 window frame flags (`WS_THICKFRAME` via `.with_resizable(true)`), wrapped the main panel in a scroll-safe container, and restricted auto-height `InnerSize` adjustments strictly to section/banner transitions so **AltSnap** move, snap, and resize actions work cleanly without snapping back.
-- **Elapsed Duration Accuracy (`src/core/clicker.rs`)**: Guarded `ClickEngine::stop()` with atomic `active.swap(false, AcqRel)` and `run_start.take()` so follow-up stops on the UI thread no longer overwrite stop-time elapsed duration.
-- **Modal Dismissal & Chunked Setup Progress (`src/ui/app.rs`)**: Modals now dismiss cleanly on `Esc` or backdrop click, and Setup downloads display byte progress even when `Content-Length` is omitted.
+- **Banner & Setup Prompt Layout**: Bounded right-aligned button rows so update banners and modals never stretch vertically across the entire window.
+- **Windows AltSnap Compatibility**: Restored standard resizable Win32 frame flags (`WS_THICKFRAME`), wrapped the workspace in a scroll-safe container, and restricted auto-height resizing to layout transitions so AltSnap move, snap, and resize work smoothly.
+- **Engine & Modal Fixes**: Preserved stop-time elapsed duration across `Esc` panic + UI `stop()` calls, added `Esc` & backdrop-click modal dismissal, and added chunked transfer progress in `SetupProgress`.
+
+---
+
+<details>
+<summary>Legacy ClickForge History (v1.0.0 – v4.1.1)</summary>
 
 ## [4.1.1] - 2026-11-27 — "Ferrous"
 
@@ -200,3 +208,5 @@ All notable changes to **Klick** (formerly **ClickForge**) are documented in thi
 ### Added
 - Initial public release of ClickForge desktop auto-clicker.
 - Core threading architecture, background click loop, and global hotkey listener.
+
+</details>

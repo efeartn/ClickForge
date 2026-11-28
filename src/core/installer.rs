@@ -277,9 +277,9 @@ mod tests {
     #[test]
     fn select_setup_finds_asset() {
         let rel = ReleaseInfo {
-            tag: "v4.2.0".to_string(),
-            version: (4, 2, 0),
-            title: "v4.2.0".to_string(),
+            tag: "v1.0.0".to_string(),
+            version: (1, 0, 0),
+            title: "v1.0.0".to_string(),
             page_url: String::new(),
             notes: String::new(),
             assets: vec![Asset {

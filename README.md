@@ -48,7 +48,7 @@ Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`
 
 ---
 
-## Pure Native Performance (`v4.2.0 — "Ferrous"`)
+## Pure Native Performance (`v1.0.0`)
 
 Formerly **ClickForge** — renamed to **Klick** with automatic config migration from `%LOCALAPPDATA%\ClickForge\config.json` (and `~/.config/ClickForge/config.json`). Built in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
 
@@ -147,7 +147,7 @@ cargo run --release -- --smoke-test
 Klick/
 ├── src/
 │   ├── main.rs                 # Entrypoint, CLI (--version / --smoke-test), eframe setup
-│   ├── meta.rs                 # App name, version (4.2.0), codename (Ferrous), embedded icon
+│   ├── meta.rs                 # App name, version (1.0.0), embedded icon
 │   ├── core/
 │   │   ├── clicker.rs          # Lock-free telemetry, Humanizer worker, corner failsafe
 │   │   ├── config.rs           # Schema-validated persistent config & profile presets

@@ -25,7 +25,7 @@ use crate::core::validation::{
     allow_float, allow_int, allow_uint, effective_rate_hint, fmt_number, fmt_with_commas,
     parse_float, parse_int, sanitize_speed, to_interval_ms,
 };
-use crate::meta::{APP_EXE, APP_NAME, CODENAME, ICON_PNG, SETUP_EXE, VERSION};
+use crate::meta::{APP_EXE, APP_NAME, ICON_PNG, SETUP_EXE, VERSION};
 use crate::ui::icons::HeaderIconKind;
 use crate::ui::picker::{CoordinatePicker, PickerOutcome};
 use crate::ui::theme::{apply_visuals, install_native_fonts, system_prefers_dark, Palette};
@@ -301,7 +301,7 @@ impl KlickApp {
                 release: ReleaseInfo {
                     tag: format!("v{VERSION}"),
                     version: updater::current_version(),
-                    title: format!("v{VERSION} — \"{CODENAME}\""),
+                    title: format!("v{VERSION}"),
                     page_url: updater::releases_page_url(),
                     notes: "### Highlights\n- Faster startup and lower idle RAM\n- Crisp Carbon & Precision Emerald polish\n- Seamless cross-platform CI verification".to_string(),
                     assets: vec![],
@@ -1114,7 +1114,7 @@ impl KlickApp {
                     .font(FontId::monospace(11.0))
                     .color(p.text_faint),
             )
-            .on_hover_text(format!("{APP_NAME} v{VERSION} — {CODENAME}"));
+            .on_hover_text(format!("{APP_NAME} v{VERSION}"));
 
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
