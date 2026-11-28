@@ -17,7 +17,7 @@ use crate::core::input_backend::DummyBackend;
 use crate::core::system::cleanup_legacy_migration_marker;
 use crate::core::updater::parse_version;
 use crate::meta::{APP_NAME, CODENAME, ICON_PNG, VERSION};
-use crate::ui::app::{ClickForgeApp, StartupOptions};
+use crate::ui::app::{KlickApp, StartupOptions};
 use crate::ui::widgets::WINDOW_WIDTH;
 
 fn run_smoke_test() -> i32 {
@@ -104,10 +104,8 @@ fn main() -> eframe::Result<()> {
     let mut viewport = ViewportBuilder::default()
         .with_title(APP_NAME)
         .with_inner_size(Vec2::new(WINDOW_WIDTH, 560.0))
-        .with_min_inner_size(Vec2::new(WINDOW_WIDTH, 490.0))
-        .with_max_inner_size(Vec2::new(WINDOW_WIDTH, 900.0))
-        .with_resizable(false)
-        .with_maximize_button(false);
+        .with_min_inner_size(Vec2::new(WINDOW_WIDTH, 440.0))
+        .with_resizable(true);
 
     if let Some(icon) = load_window_icon() {
         viewport = viewport.with_icon(Arc::new(icon));
@@ -123,7 +121,7 @@ fn main() -> eframe::Result<()> {
         APP_NAME,
         options,
         Box::new(move |cc| {
-            Ok(Box::new(ClickForgeApp::new(
+            Ok(Box::new(KlickApp::new(
                 cc,
                 StartupOptions {
                     preview_theme,

@@ -1,14 +1,14 @@
 #ifndef AppVersion
-  #define AppVersion "4.1.1"
+  #define AppVersion "4.2.0"
 #endif
 
-#define AppName "ClickForge"
+#define AppName "Klick"
 #define AppPublisher "efeartn"
-#define AppURL "https://github.com/efeartn/ClickForge"
-#define AppExeName "ClickForge.exe"
+#define AppURL "https://github.com/efeartn/Klick"
+#define AppExeName "Klick.exe"
 
 [Setup]
-AppId={{8F6D7C4A-3A2B-4E1C-9D8A-1F2E3D4C5B6A}
+AppId={{B4E9A21F-6C3D-4B8E-9A12-7E5C4D2F8B01}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
@@ -23,7 +23,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
-OutputBaseFilename=ClickForge-Setup
+OutputBaseFilename=Klick-Setup
 SetupIconFile=..\assets\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 UninstallDisplayName={#AppName}
@@ -39,12 +39,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
-[InstallDelete]
-; Clean up Python/PyInstaller v3.x runtime folder when upgrading to native Rust v4.0+
-Type: filesandordirs; Name: "{app}\_internal"
-
 [Files]
-Source: "..\dist\{#AppName}\ClickForge.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\dist\{#AppName}\Klick.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"

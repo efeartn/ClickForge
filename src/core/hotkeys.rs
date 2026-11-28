@@ -423,7 +423,7 @@ mod platform {
             let running = Arc::clone(&self.running);
 
             let handle = thread::Builder::new()
-                .name("ClickForge-Hotkeys".to_string())
+                .name("Klick-Hotkeys".to_string())
                 .spawn(move || unsafe {
                     let tid = GetCurrentThreadId();
                     tid_out.store(tid, Ordering::Release);
@@ -705,7 +705,7 @@ mod platform {
             let rl_slot = Arc::clone(&self.run_loop);
 
             let handle = thread::Builder::new()
-                .name("ClickForge-Hotkeys".to_string())
+                .name("Klick-Hotkeys".to_string())
                 .spawn(move || unsafe {
                     let user_data = Box::new(TapUserData {
                         shared,
@@ -900,7 +900,7 @@ mod platform {
             let running = Arc::clone(&self.running);
 
             let handle = thread::Builder::new()
-                .name("ClickForge-Hotkeys".to_string())
+                .name("Klick-Hotkeys".to_string())
                 .spawn(move || {
                     if linux_rt::is_wayland_session() {
                         let evdev_fds = linux_rt::open_evdev_hotkey_devices();

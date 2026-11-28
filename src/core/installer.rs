@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
 use crate::core::updater::{self, Asset, ReleaseInfo};
-use crate::meta::APP_NAME;
+use crate::meta::{APP_EXE, APP_NAME, SETUP_EXE};
 
-pub const SETUP_ASSET_NAME: &str = "ClickForge-Setup.exe";
+pub const SETUP_ASSET_NAME: &str = SETUP_EXE;
 
 pub fn default_install_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA")
@@ -105,8 +105,8 @@ where
 {
     let release = updater::fetch_latest()?;
     let asset = select_setup_asset(&release)
-        .ok_or_else(|| "Release does not include ClickForge-Setup.exe.".to_string())?;
-    let workdir = std::env::temp_dir().join("clickforge-setup");
+        .ok_or_else(|| format!("Release does not include {SETUP_EXE}."))?;
+    let workdir = std::env::temp_dir().join("klick-setup");
     let setup_path = updater::download_asset(asset, &workdir, on_progress, cancel)?;
     launch_exe(&setup_path)?;
     Ok(setup_path)
@@ -125,8 +125,8 @@ pub fn install_portable_to_programs(create_desktop_shortcut: bool) -> Result<Pat
         fs::create_dir_all(&install_dir)
             .map_err(|e| format!("Failed creating install dir: {e}"))?;
 
-        let dst_exe = install_dir.join("ClickForge.exe");
-        fs::copy(&src_exe, &dst_exe).map_err(|e| format!("Failed copying ClickForge.exe: {e}"))?;
+        let dst_exe = install_dir.join(APP_EXE);
+        fs::copy(&src_exe, &dst_exe).map_err(|e| format!("Failed copying {APP_EXE}: {e}"))?;
 
         let stale_internal = install_dir.join("_internal");
         if stale_internal.exists() {
@@ -216,7 +216,7 @@ fn write_uninstall_registry(
         OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    let subkey = wide(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge");
+    let subkey = wide(r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Klick");
     let mut hkey: HKEY = std::ptr::null_mut();
     let status = unsafe { RegCreateKeyW(HKEY_CURRENT_USER, subkey.as_ptr(), &mut hkey) };
     if status != 0 {
@@ -266,10 +266,10 @@ mod tests {
 
     #[test]
     fn programs_detection_works() {
-        let target = default_install_dir().join("ClickForge.exe");
+        let target = default_install_dir().join(APP_EXE);
         assert!(is_installed_in_programs(Some(&target)));
         if cfg!(target_os = "windows") {
-            let desktop = PathBuf::from(r"C:\Temp\ClickForge\ClickForge.exe");
+            let desktop = PathBuf::from(r"C:\Temp\Klick\Klick.exe");
             assert!(!is_installed_in_programs(Some(&desktop)));
         }
     }
@@ -277,13 +277,13 @@ mod tests {
     #[test]
     fn select_setup_finds_asset() {
         let rel = ReleaseInfo {
-            tag: "v4.0.0".to_string(),
-            version: (4, 0, 0),
-            title: "v4.0.0".to_string(),
+            tag: "v4.2.0".to_string(),
+            version: (4, 2, 0),
+            title: "v4.2.0".to_string(),
             page_url: String::new(),
             notes: String::new(),
             assets: vec![Asset {
-                name: "ClickForge-Setup.exe".to_string(),
+                name: SETUP_EXE.to_string(),
                 url: "https://example.com/setup.exe".to_string(),
                 size: 123,
                 sha256: None,

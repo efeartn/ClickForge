@@ -25,7 +25,7 @@ use crate::core::validation::{
     allow_float, allow_int, allow_uint, effective_rate_hint, fmt_number, fmt_with_commas,
     parse_float, parse_int, sanitize_speed, to_interval_ms,
 };
-use crate::meta::{APP_NAME, CODENAME, ICON_PNG, VERSION};
+use crate::meta::{APP_EXE, APP_NAME, CODENAME, ICON_PNG, SETUP_EXE, VERSION};
 use crate::ui::icons::HeaderIconKind;
 use crate::ui::picker::{CoordinatePicker, PickerOutcome};
 use crate::ui::theme::{apply_visuals, install_native_fonts, system_prefers_dark, Palette};
@@ -167,7 +167,7 @@ pub struct StartupOptions {
     pub screenshot_out: Option<PathBuf>,
 }
 
-pub struct ClickForgeApp {
+pub struct KlickApp {
     config: AppConfig,
     backend: Arc<dyn InputBackend>,
     engine: Arc<ClickEngine>,
@@ -199,6 +199,8 @@ pub struct ClickForgeApp {
     last_os_dark: Option<bool>,
     last_theme_mode: String,
     last_target_h: f32,
+    last_layout_sig: Option<(bool, bool, bool, bool)>,
+    auto_resize_frames: u8,
     platform_warnings_checked: bool,
 
     // Auto-updater & Setup state
@@ -218,7 +220,7 @@ pub struct ClickForgeApp {
     screenshot_requested: bool,
 }
 
-impl ClickForgeApp {
+impl KlickApp {
     pub fn new(cc: &eframe::CreationContext<'_>, opts: StartupOptions) -> Self {
         install_native_fonts(&cc.egui_ctx);
 
@@ -297,15 +299,27 @@ impl ClickForgeApp {
             }),
             Some("update") => Some(ModalDialog::UpdatePrompt {
                 release: ReleaseInfo {
-                    tag: "v4.1.0".to_string(),
-                    version: (4, 1, 0),
-                    title: "v4.1.0 — \"Ferrous\"".to_string(),
+                    tag: format!("v{VERSION}"),
+                    version: updater::current_version(),
+                    title: format!("v{VERSION} — \"{CODENAME}\""),
                     page_url: updater::releases_page_url(),
                     notes: "### Highlights\n- Faster startup and lower idle RAM\n- Crisp Carbon & Precision Emerald polish\n- Seamless cross-platform CI verification".to_string(),
                     assets: vec![],
                 },
             }),
             _ => None,
+        };
+        let banner = if opts.preview_dialog.as_deref() == Some("banner") {
+            Some(BannerState {
+                title: format!("You're up to date (v{VERSION})"),
+                detail: format!("Latest release: v{VERSION}"),
+                tone: BannerTone::Neutral,
+                progress: None,
+                actions: vec![("Dismiss", BannerAction::Dismiss, false)],
+                auto_hide_at: None,
+            })
+        } else {
+            None
         };
 
         let startup_check_at = if !preview_mode && config.auto_update_check {
@@ -342,6 +356,8 @@ impl ClickForgeApp {
             last_os_dark: Some(pal.is_dark),
             last_theme_mode: String::new(),
             last_target_h: 0.0,
+            last_layout_sig: None,
+            auto_resize_frames: 3,
             platform_warnings_checked: preview_mode,
             startup_check_at,
             update_busy: false,
@@ -351,7 +367,7 @@ impl ClickForgeApp {
             staged_update: None,
             transfer_cancel: None,
             installed_exe_path: None,
-            banner: None,
+            banner,
             modal,
             preview_mode,
             screenshot_out: opts.screenshot_out,
@@ -680,6 +696,8 @@ impl ClickForgeApp {
                                 got as f64 / (1024.0 * 1024.0),
                                 total as f64 / (1024.0 * 1024.0)
                             );
+                        } else {
+                            b.detail = format!("{:.1} MB downloaded", got as f64 / (1024.0 * 1024.0));
                         }
                     }
                 }
@@ -689,7 +707,7 @@ impl ClickForgeApp {
                     if kind == "portable" {
                         self.installed_exe_path = Some(path);
                         self.banner = Some(BannerState {
-                            title: "ClickForge installed to Windows Programs".to_string(),
+                            title: format!("{APP_NAME} installed to Windows Programs"),
                             detail: "Available in Start Menu and Installed Apps.".to_string(),
                             tone: BannerTone::Accent,
                             progress: None,
@@ -702,7 +720,7 @@ impl ClickForgeApp {
                     } else {
                         self.banner = Some(BannerState {
                             title: "Setup wizard started".to_string(),
-                            detail: "Follow ClickForge Setup to finish installing.".to_string(),
+                            detail: format!("Follow {APP_NAME} Setup to finish installing."),
                             tone: BannerTone::Accent,
                             progress: None,
                             actions: vec![("Dismiss", BannerAction::Dismiss, false)],
@@ -799,7 +817,7 @@ impl ClickForgeApp {
         let tx = self.events_tx.clone();
         let repaint = ctx.clone();
         thread::Builder::new()
-            .name("ClickForge-UpdateCheck".to_string())
+            .name("Klick-UpdateCheck".to_string())
             .spawn(move || {
                 match updater::fetch_latest() {
                     Ok(rel) => {
@@ -831,7 +849,7 @@ impl ClickForgeApp {
 
         let ver_text = rel.version_text();
         if let Some((staged, _, cached_rel)) = &self.staged_update {
-            if cached_rel.version_text() == ver_text && staged.join("ClickForge.exe").is_file() {
+            if cached_rel.version_text() == ver_text && staged.join(APP_EXE).is_file() {
                 self.banner = Some(BannerState {
                     title: format!("Update v{ver_text} ready to install"),
                     detail: "Click Restart & Update to apply and relaunch.".to_string(),
@@ -851,7 +869,7 @@ impl ClickForgeApp {
         let cancel = Arc::new(AtomicBool::new(false));
         self.transfer_cancel = Some(Arc::clone(&cancel));
         self.banner = Some(BannerState {
-            title: format!("Downloading ClickForge v{ver_text}..."),
+            title: format!("Downloading {APP_NAME} v{ver_text}..."),
             detail: "Connecting to GitHub Releases...".to_string(),
             tone: BannerTone::Accent,
             progress: Some(0.0),
@@ -862,9 +880,9 @@ impl ClickForgeApp {
         let tx = self.events_tx.clone();
         let repaint = ctx.clone();
         thread::Builder::new()
-            .name("ClickForge-UpdateDownload".to_string())
+            .name("Klick-UpdateDownload".to_string())
             .spawn(move || {
-                let workdir = std::env::temp_dir().join(format!("ClickForge-update-{ver_text}"));
+                let workdir = std::env::temp_dir().join(format!("{APP_NAME}-update-{ver_text}"));
                 let mut last_emit = Instant::now();
                 let res = updater::download_asset(
                     &asset,
@@ -995,7 +1013,7 @@ impl ClickForgeApp {
                 match installer::launch_exe(&path) {
                     Ok(()) => {
                         self.banner = Some(BannerState {
-                            title: "Launched ClickForge Setup".to_string(),
+                            title: format!("Launched {APP_NAME} Setup"),
                             detail: "Follow the Windows installer wizard to complete setup.".to_string(),
                             tone: BannerTone::Accent,
                             progress: None,
@@ -1016,7 +1034,7 @@ impl ClickForgeApp {
         let repaint = ctx.clone();
         if portable_ok {
             self.banner = Some(BannerState {
-                title: "Installing ClickForge to Programs...".to_string(),
+                title: format!("Installing {APP_NAME} to Programs..."),
                 detail: "Creating Start Menu & Installed Apps entries".to_string(),
                 tone: BannerTone::Accent,
                 progress: Some(0.5),
@@ -1024,7 +1042,7 @@ impl ClickForgeApp {
                 auto_hide_at: None,
             });
             thread::Builder::new()
-                .name("ClickForge-Setup".to_string())
+                .name("Klick-Setup".to_string())
                 .spawn(move || {
                     match installer::install_portable_to_programs(desktop_shortcut) {
                         Ok(p) => {
@@ -1043,7 +1061,7 @@ impl ClickForgeApp {
         let cancel = Arc::new(AtomicBool::new(false));
         self.transfer_cancel = Some(Arc::clone(&cancel));
         self.banner = Some(BannerState {
-            title: "Downloading ClickForge-Setup.exe...".to_string(),
+            title: format!("Downloading {SETUP_EXE}..."),
             detail: "Connecting to GitHub Releases...".to_string(),
             tone: BannerTone::Accent,
             progress: Some(0.0),
@@ -1051,7 +1069,7 @@ impl ClickForgeApp {
             auto_hide_at: None,
         });
         thread::Builder::new()
-            .name("ClickForge-SetupDownload".to_string())
+            .name("Klick-SetupDownload".to_string())
             .spawn(move || {
                 let mut last_emit = Instant::now();
                 let res = installer::download_and_launch_setup(
@@ -1106,7 +1124,7 @@ impl ClickForgeApp {
                 if cfg!(target_os = "windows") && !installer::is_installed_in_programs(None) {
                     let btn = ghost_button(ui, p, "Setup", Vec2::new(50.0, 28.0), !self.setup_busy);
                     if btn
-                        .on_hover_text("Install ClickForge to Windows Programs")
+                        .on_hover_text(format!("Install {APP_NAME} to Windows Programs"))
                         .clicked()
                     {
                         self.modal = Some(ModalDialog::SetupPrompt {
@@ -1267,20 +1285,24 @@ impl ClickForgeApp {
                 }
                 if !actions.is_empty() {
                     ui.add_space(6.0);
-                    ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 6.0;
-                        for (label, act, primary) in actions.into_iter().rev() {
-                            let w = (label.len() as f32 * 7.2 + 24.0).max(66.0);
-                            let r = if primary {
-                                accent_button(ui, p, label, Vec2::new(w, 26.0), false, 11.5, 6)
-                            } else {
-                                ghost_button(ui, p, label, Vec2::new(w, 26.0), true)
-                            };
-                            if r.clicked() {
-                                clicked_action = Some(act);
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(ui.available_width(), 26.0),
+                        egui::Layout::right_to_left(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            for (label, act, primary) in actions.into_iter().rev() {
+                                let w = (label.len() as f32 * 7.2 + 24.0).max(66.0);
+                                let r = if primary {
+                                    accent_button(ui, p, label, Vec2::new(w, 26.0), false, 11.5, 6)
+                                } else {
+                                    ghost_button(ui, p, label, Vec2::new(w, 26.0), true)
+                                };
+                                if r.clicked() {
+                                    clicked_action = Some(act);
+                                }
                             }
-                        }
-                    });
+                        },
+                    );
                 }
             });
 
@@ -1937,6 +1959,7 @@ impl ClickForgeApp {
         let mut pending_update_start = false;
         let mut pending_skip_ver: Option<String> = None;
 
+        let mut backdrop_clicked = false;
         egui::Area::new(egui::Id::new("modal_backdrop"))
             .fixed_pos(egui::Pos2::ZERO)
             .order(egui::Order::Middle)
@@ -1947,12 +1970,16 @@ impl ClickForgeApp {
                     0.0,
                     Color32::from_black_alpha(if p.is_dark { 165 } else { 90 }),
                 );
-                ui.allocate_rect(rect, egui::Sense::click());
+                if ui.allocate_rect(rect, egui::Sense::click()).clicked() {
+                    backdrop_clicked = true;
+                }
             });
 
+        let esc_pressed = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+
         let dialog_title = match &modal_kind {
-            ModalDialog::UpdatePrompt { .. } => "ClickForge Update",
-            ModalDialog::SetupPrompt { .. } => "ClickForge Setup",
+            ModalDialog::UpdatePrompt { .. } => "Klick Update",
+            ModalDialog::SetupPrompt { .. } => "Klick Setup",
         };
 
         egui::Window::new(dialog_title)
@@ -2073,21 +2100,21 @@ impl ClickForgeApp {
                 } => {
                     let (subhead, action_lbl, detail) = if has_local {
                         (
-                            "Run the included ClickForge Setup wizard to install into Windows Programs.",
+                            format!("Run the included {APP_NAME} Setup wizard to install into Windows Programs."),
                             "Run Setup Wizard",
-                            "Installs per-user to %LOCALAPPDATA%\\Programs\\ClickForge (no admin prompt required).",
+                            format!("Installs per-user to %LOCALAPPDATA%\\Programs\\{APP_NAME} (no admin prompt required)."),
                         )
                     } else if portable_ok {
                         (
-                            "Install this portable ClickForge build into your Windows Programs folder.",
+                            format!("Install this portable {APP_NAME} build into your Windows Programs folder."),
                             "Install to Programs",
-                            "Adds ClickForge to Start Menu and Installed Apps with automatic updates enabled.",
+                            format!("Adds {APP_NAME} to Start Menu and Installed Apps with automatic updates enabled."),
                         )
                     } else {
                         (
-                            "Download and run the official ClickForge-Setup.exe installer to add ClickForge to Windows Programs.",
+                            format!("Download and run the official {SETUP_EXE} installer to add {APP_NAME} to Windows Programs."),
                             "Download Setup",
-                            "Installs per-user to %LOCALAPPDATA%\\Programs\\ClickForge (no admin prompt required).",
+                            format!("Installs per-user to %LOCALAPPDATA%\\Programs\\{APP_NAME} (no admin prompt required)."),
                         )
                     };
 
@@ -2098,7 +2125,7 @@ impl ClickForgeApp {
                         }
                         ui.vertical(|ui| {
                             ui.label(
-                                RichText::new("Install ClickForge for Windows")
+                                RichText::new(format!("Install {APP_NAME} for Windows"))
                                     .font(FontId::proportional(15.5))
                                     .strong()
                                     .color(p.text),
@@ -2125,27 +2152,32 @@ impl ClickForgeApp {
 
                     ui.add_space(14.0);
                     let mut keep = true;
-                    ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        if accent_button(
-                            ui,
-                            p,
-                            action_lbl,
-                            Vec2::new(136.0, 32.0),
-                            false,
-                            12.0,
-                            7,
-                        )
-                        .clicked()
-                        {
-                            pending_setup_run =
-                                Some((create_desktop_shortcut, has_local, portable_ok));
-                            keep = false;
-                        }
-                        if ghost_button(ui, p, "Cancel", Vec2::new(82.0, 32.0), true).clicked() {
-                            keep = false;
-                        }
-                    });
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(ui.available_width(), 32.0),
+                        egui::Layout::right_to_left(Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            if accent_button(
+                                ui,
+                                p,
+                                action_lbl,
+                                Vec2::new(136.0, 32.0),
+                                false,
+                                12.0,
+                                7,
+                            )
+                            .clicked()
+                            {
+                                pending_setup_run =
+                                    Some((create_desktop_shortcut, has_local, portable_ok));
+                                keep = false;
+                            }
+                            if ghost_button(ui, p, "Cancel", Vec2::new(82.0, 32.0), true).clicked()
+                            {
+                                keep = false;
+                            }
+                        },
+                    );
                     if keep {
                         next_modal = Some(ModalDialog::SetupPrompt {
                             create_desktop_shortcut,
@@ -2156,6 +2188,9 @@ impl ClickForgeApp {
                 }
             });
 
+        if (backdrop_clicked || esc_pressed) && !self.preview_mode {
+            next_modal = None;
+        }
         self.modal = next_modal;
         if let Some(ver) = pending_skip_ver {
             self.config.skipped_version = ver;
@@ -2172,7 +2207,7 @@ impl ClickForgeApp {
     }
 }
 
-impl eframe::App for ClickForgeApp {
+impl eframe::App for KlickApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.process_events(ctx);
 
@@ -2215,22 +2250,27 @@ impl eframe::App for ClickForgeApp {
                     .inner_margin(Margin::symmetric(14, 11)),
             )
             .show(ctx, |ui| {
-                let inner = ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    self.render_header(ui, p, ctx);
-                    ui.add_space(9.0);
-                    self.render_banner(ui, p, ctx);
-                    self.render_telemetry_card(ui, p);
-                    ui.add_space(9.0);
-                    self.render_speed_card(ui, p);
-                    ui.add_space(9.0);
-                    self.render_target_card(ui, p);
-                    ui.add_space(9.0);
-                    self.render_humanizer_card(ui, p);
-                    ui.add_space(10.0);
-                    self.render_footer(ui, p);
-                });
-                measured_h = (inner.response.rect.height() + 22.0).ceil();
+                let scroll_res = ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        let inner = ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 0.0;
+                            self.render_header(ui, p, ctx);
+                            ui.add_space(9.0);
+                            self.render_banner(ui, p, ctx);
+                            self.render_telemetry_card(ui, p);
+                            ui.add_space(9.0);
+                            self.render_speed_card(ui, p);
+                            ui.add_space(9.0);
+                            self.render_target_card(ui, p);
+                            ui.add_space(9.0);
+                            self.render_humanizer_card(ui, p);
+                            ui.add_space(10.0);
+                            self.render_footer(ui, p);
+                        });
+                        inner.response.rect.height()
+                    });
+                measured_h = (scroll_res.inner + 22.0).ceil();
             });
 
         // Sync hotkey suspension when typing inside numeric inputs or picking coords
@@ -2241,12 +2281,29 @@ impl eframe::App for ClickForgeApp {
         // Modal dialog overlay if any
         self.render_modal(ctx, p);
 
-        // Adapt window height cleanly to collapsed/expanded sections
-        let min_h = if self.modal.is_some() { 380.0 } else { 490.0 };
-        let target_h = measured_h.clamp(min_h, 880.0);
-        if (target_h - self.last_target_h).abs() >= 1.5 {
-            self.last_target_h = target_h;
-            ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(WINDOW_WIDTH, target_h)));
+        // Adapt window height only when sections collapse/expand, preserving manual/AltSnap resizes.
+        let layout_sig = (
+            self.banner.is_some(),
+            self.config.settings.position_mode == "fixed",
+            self.config.settings.humanize,
+            self.modal.is_some(),
+        );
+        if self.last_layout_sig != Some(layout_sig) {
+            self.last_layout_sig = Some(layout_sig);
+            self.auto_resize_frames = 3;
+        }
+        if self.auto_resize_frames > 0 {
+            self.auto_resize_frames -= 1;
+            let min_h = if self.modal.is_some() { 380.0 } else { 490.0 };
+            let target_h = measured_h.clamp(min_h, 880.0);
+            if (target_h - self.last_target_h).abs() >= 1.5 {
+                let cur_w = ctx
+                    .input(|i| i.viewport().inner_rect.map(|r| r.width()))
+                    .unwrap_or(WINDOW_WIDTH)
+                    .max(WINDOW_WIDTH);
+                self.last_target_h = target_h;
+                ctx.send_viewport_cmd(ViewportCommand::InnerSize(Vec2::new(cur_w, target_h)));
+            }
         }
 
         // Low idle CPU when settled; smooth updates when running or animating
@@ -2317,5 +2374,5 @@ fn decode_logo_texture(ctx: &egui::Context) -> Option<TextureHandle> {
     let img = image::load_from_memory(ICON_PNG).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
     let color_image = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &img);
-    Some(ctx.load_texture("clickforge_logo", color_image, egui::TextureOptions::LINEAR))
+    Some(ctx.load_texture("klick_logo", color_image, egui::TextureOptions::LINEAR))
 }

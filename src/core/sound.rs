@@ -6,7 +6,7 @@ pub fn play_cue(starting: bool, enabled: bool) {
     }
     let freq: u32 = if starting { 1320 } else { 880 };
     thread::Builder::new()
-        .name("ClickForge-AudioCue".to_string())
+        .name("Klick-AudioCue".to_string())
         .spawn(move || play_worker(freq, 35))
         .ok();
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::meta::{REPO, VERSION};
+use crate::meta::{APP_EXE, APP_NAME, REPO, VERSION};
 
 pub const MAX_DOWNLOAD_BYTES: u64 = 300 * 1024 * 1024;
 
@@ -50,11 +50,11 @@ impl ReleaseInfo {
 
 pub fn platform_asset_name() -> &'static str {
     if cfg!(target_os = "windows") {
-        "ClickForge-Windows.zip"
+        "Klick-Windows.zip"
     } else if cfg!(target_os = "macos") {
-        "ClickForge-macOS.zip"
+        "Klick-macOS.zip"
     } else {
-        "ClickForge-Linux.zip"
+        "Klick-Linux.zip"
     }
 }
 
@@ -129,7 +129,7 @@ pub fn http_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(10))
         .timeout_read(Duration::from_secs(30))
-        .user_agent(&format!("ClickForge/{VERSION}"))
+        .user_agent(&format!("{APP_NAME}/{VERSION}"))
         .build()
 }
 
@@ -323,9 +323,9 @@ pub fn safe_extract(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Find folder containing standalone `ClickForge.exe` (max depth 2).
+/// Find folder containing standalone `Klick.exe` (max depth 2).
 pub fn find_app_root(extracted: &Path) -> Option<PathBuf> {
-    if extracted.join("ClickForge.exe").is_file() {
+    if extracted.join(APP_EXE).is_file() {
         return Some(extracted.to_path_buf());
     }
     let Ok(entries) = fs::read_dir(extracted) else {
@@ -336,12 +336,7 @@ pub fn find_app_root(extracted: &Path) -> Option<PathBuf> {
         .filter(|p| p.is_dir())
         .collect();
     dirs.sort();
-    for d in dirs {
-        if d.join("ClickForge.exe").is_file() {
-            return Some(d);
-        }
-    }
-    None
+    dirs.into_iter().find(|d| d.join(APP_EXE).is_file())
 }
 
 pub fn can_self_update() -> (bool, String) {
@@ -367,7 +362,7 @@ pub fn can_self_update() -> (bool, String) {
             "Development build detected; opening the download page.".to_string(),
         );
     }
-    let probe = dir.join(".cf-write-test.tmp");
+    let probe = dir.join(".klick-write-test.tmp");
     match File::create(&probe) {
         Ok(f) => {
             drop(f);
@@ -376,7 +371,7 @@ pub fn can_self_update() -> (bool, String) {
         }
         Err(_) => (
             false,
-            "ClickForge's folder is read-only. Download the update manually.".to_string(),
+            format!("{APP_NAME}'s folder is read-only. Download the update manually."),
         ),
     }
 }
@@ -385,7 +380,7 @@ pub fn stage_update(zip_path: &Path, workdir: &Path) -> Result<PathBuf, String> 
     let staged = workdir.join("staged");
     let _ = fs::remove_dir_all(&staged);
     safe_extract(zip_path, &staged)?;
-    find_app_root(&staged).ok_or_else(|| "Archive does not contain ClickForge.exe.".to_string())
+    find_app_root(&staged).ok_or_else(|| format!("Archive does not contain {APP_EXE}."))
 }
 
 #[cfg(target_os = "windows")]
@@ -422,7 +417,7 @@ function Get-Sha256Hex([string]$filePath) {
     }
 }
 
-[System.IO.File]::WriteAllText($log, "ClickForge updater started`r`n", $utf8NoBom)
+[System.IO.File]::WriteAllText($log, "Klick updater started`r`n", $utf8NoBom)
 
 if ($cfPid -gt 0) {
     try {
@@ -439,8 +434,8 @@ if ($cfPid -gt 0) {
 }
 
 $dstExe = [System.IO.Path]::Combine($dstDir, $exeName)
-$srcExe = [System.IO.Path]::Combine($srcDir, 'ClickForge.exe')
-$bakExe = "$dstExe.cfbak"
+$srcExe = [System.IO.Path]::Combine($srcDir, 'Klick.exe')
+$bakExe = "$dstExe.klbak"
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($exeName)
 try {
@@ -492,7 +487,7 @@ if ($swapped) {
     }
     if ($newVer) {
         try {
-            $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge', $true)
+            $regKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall\Klick', $true)
             if ($regKey) {
                 $regKey.SetValue('DisplayVersion', $newVer)
                 $regKey.Close()
@@ -552,7 +547,7 @@ pub fn launch_self_updater(staged_app: &Path, workdir: &Path, new_version: &str)
         let exe_name = exe
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("ClickForge.exe");
+            .unwrap_or(APP_EXE);
 
         let script = workdir.join("apply_update.ps1");
         let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
@@ -608,7 +603,7 @@ mod tests {
 
     #[test]
     fn zipslip_rejected_and_standalone_exe_found() {
-        let dir = std::env::temp_dir().join("clickforge_test_zip_safety");
+        let dir = std::env::temp_dir().join("klick_test_zip_safety");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
@@ -628,12 +623,12 @@ mod tests {
             let f = File::create(&good_zip).unwrap();
             let mut zw = zip::ZipWriter::new(f);
             let opts = zip::write::SimpleFileOptions::default();
-            zw.start_file("ClickForge/ClickForge.exe", opts).unwrap();
+            zw.start_file("Klick/Klick.exe", opts).unwrap();
             zw.write_all(b"MZ").unwrap();
             zw.finish().unwrap();
         }
         let app_root = stage_update(&good_zip, &dir).unwrap();
-        assert!(app_root.join("ClickForge.exe").is_file());
+        assert!(app_root.join(APP_EXE).is_file());
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -651,7 +646,7 @@ mod tests {
         use std::os::windows::process::CommandExt;
         use std::process::{Command, Stdio};
 
-        let root = std::env::temp_dir().join("clickforge_test_ps1_swap");
+        let root = std::env::temp_dir().join("klick_test_ps1_swap");
         let _ = fs::remove_dir_all(&root);
         let dst = root.join("dst");
         let work = root.join("work");
@@ -660,11 +655,11 @@ mod tests {
         fs::create_dir_all(&legacy_internal).unwrap();
         fs::create_dir_all(&src).unwrap();
 
-        let dst_exe = dst.join("ClickForge.exe");
-        let src_exe = src.join("ClickForge.exe");
+        let dst_exe = dst.join(APP_EXE);
+        let src_exe = src.join(APP_EXE);
         fs::write(&dst_exe, b"OLD_BINARY_PAYLOAD").unwrap();
-        fs::write(&legacy_internal.join("stale.dll"), b"OLD_RUNTIME").unwrap();
-        fs::write(&src_exe, b"NEW_NATIVE_RUST_BINARY_V4_1_1").unwrap();
+        fs::write(legacy_internal.join("stale.dll"), b"OLD_RUNTIME").unwrap();
+        fs::write(&src_exe, b"NEW_NATIVE_RUST_BINARY_V4_2_0").unwrap();
 
         let script = work.join("apply_update.ps1");
         let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
@@ -684,7 +679,7 @@ mod tests {
             .env("CF_PID", "999999")
             .env("CF_SRC", src.to_string_lossy().as_ref())
             .env("CF_DST", dst.to_string_lossy().as_ref())
-            .env("CF_EXE", "ClickForge.exe")
+            .env("CF_EXE", APP_EXE)
             .env("CF_WORK", work.to_string_lossy().as_ref())
             .env("CF_VER", "")
             .env("CF_NO_RELAUNCH", "1")
@@ -702,8 +697,8 @@ mod tests {
             String::from_utf8_lossy(&output.stderr),
             log
         );
-        assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V4_1_1");
-        assert!(!dst.join("ClickForge.exe.cfbak").exists());
+        assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V4_2_0");
+        assert!(!dst.join("Klick.exe.klbak").exists());
         assert!(!legacy_internal.exists());
         assert!(!src.exists());
         assert!(log.contains("Update installed"), "unexpected log: {log}");

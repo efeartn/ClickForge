@@ -175,6 +175,7 @@ pub fn toggle_switch(ui: &mut Ui, p: &Palette, checked: &mut bool, enabled: bool
     toggled
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn number_field(
     ui: &mut Ui,
     p: &Palette,

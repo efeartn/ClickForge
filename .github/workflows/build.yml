@@ -15,14 +15,14 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: ClickForge-Windows
-            asset_name: ClickForge-Windows.zip
+            artifact_name: Klick-Windows
+            asset_name: Klick-Windows.zip
           - os: macos-latest
-            artifact_name: ClickForge-macOS
-            asset_name: ClickForge-macOS.zip
+            artifact_name: Klick-macOS
+            asset_name: Klick-macOS.zip
           - os: ubuntu-latest
-            artifact_name: ClickForge-Linux
-            asset_name: ClickForge-Linux.zip
+            artifact_name: Klick-Linux
+            asset_name: Klick-Linux.zip
 
     steps:
       - name: Check out repository
@@ -51,25 +51,25 @@ jobs:
         run: |
           rm -rf dist
           if [ "$RUNNER_OS" = "Windows" ]; then
-            mkdir -p dist/ClickForge
-            cp target/release/ClickForge.exe dist/ClickForge/ClickForge.exe
+            mkdir -p dist/Klick
+            cp target/release/Klick.exe dist/Klick/Klick.exe
           elif [ "$RUNNER_OS" = "macOS" ]; then
             VER=$(awk -F'"' '/^version =/{print $2; exit}' Cargo.toml)
-            mkdir -p dist/ClickForge.app/Contents/MacOS dist/ClickForge.app/Contents/Resources
-            cp target/release/ClickForge dist/ClickForge.app/Contents/MacOS/ClickForge
-            chmod +x dist/ClickForge.app/Contents/MacOS/ClickForge
-            cp assets/icon.icns dist/ClickForge.app/Contents/Resources/icon.icns
-            cat > dist/ClickForge.app/Contents/Info.plist <<EOF
+            mkdir -p dist/Klick.app/Contents/MacOS dist/Klick.app/Contents/Resources
+            cp target/release/Klick dist/Klick.app/Contents/MacOS/Klick
+            chmod +x dist/Klick.app/Contents/MacOS/Klick
+            cp assets/icon.icns dist/Klick.app/Contents/Resources/icon.icns
+            cat > dist/Klick.app/Contents/Info.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>CFBundleDisplayName</key><string>ClickForge</string>
-            <key>CFBundleExecutable</key><string>ClickForge</string>
+            <key>CFBundleDisplayName</key><string>Klick</string>
+            <key>CFBundleExecutable</key><string>Klick</string>
             <key>CFBundleIconFile</key><string>icon.icns</string>
-            <key>CFBundleIdentifier</key><string>com.efeartn.ClickForge</string>
+            <key>CFBundleIdentifier</key><string>com.efeartn.Klick</string>
             <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-            <key>CFBundleName</key><string>ClickForge</string>
+            <key>CFBundleName</key><string>Klick</string>
             <key>CFBundlePackageType</key><string>APPL</string>
             <key>CFBundleShortVersionString</key><string>${VER}</string>
             <key>CFBundleVersion</key><string>${VER}</string>
@@ -79,20 +79,20 @@ jobs:
           </plist>
           EOF
           else
-            mkdir -p dist/ClickForge
-            cp target/release/ClickForge dist/ClickForge/ClickForge
-            chmod +x dist/ClickForge/ClickForge
+            mkdir -p dist/Klick
+            cp target/release/Klick dist/Klick/Klick
+            chmod +x dist/Klick/Klick
           fi
 
       - name: Smoke-test built binary
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            pwsh -NoProfile -Command '$p = Start-Process -FilePath "dist\ClickForge\ClickForge.exe" -ArgumentList "--smoke-test" -Wait -PassThru; exit $p.ExitCode'
+            pwsh -NoProfile -Command '$p = Start-Process -FilePath "dist\Klick\Klick.exe" -ArgumentList "--smoke-test" -Wait -PassThru; exit $p.ExitCode'
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            dist/ClickForge.app/Contents/MacOS/ClickForge --smoke-test
+            dist/Klick.app/Contents/MacOS/Klick --smoke-test
           else
-            dist/ClickForge/ClickForge --smoke-test
+            dist/Klick/Klick --smoke-test
           fi
 
       - name: Prepare Windows Artifact & Installer
@@ -109,25 +109,21 @@ jobs:
             $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
           $ver = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-          & $iscc "/DAppVersion=$ver" "installer\ClickForge.iss"
-          Copy-Item "dist\ClickForge-Setup.exe" "ClickForge-Setup.exe" -Force
-
-          # Include tiny migration marker in zip so v3.3.x in-app updater upgrades cleanly to v4.0.0
-          New-Item -ItemType Directory -Force -Path "dist\ClickForge\_internal" | Out-Null
-          New-Item -ItemType File -Force -Path "dist\ClickForge\_internal\.migrated" | Out-Null
-          Compress-Archive -Path dist/ClickForge/* -DestinationPath ${{ matrix.asset_name }} -Force
+          & $iscc "/DAppVersion=$ver" "installer\Klick.iss"
+          Copy-Item "dist\Klick-Setup.exe" "Klick-Setup.exe" -Force
+          Compress-Archive -Path dist/Klick/* -DestinationPath ${{ matrix.asset_name }} -Force
 
       - name: Prepare macOS Artifact
         if: runner.os == 'macOS'
         run: |
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent ClickForge.app ../${{ matrix.asset_name }}
+          ditto -c -k --sequesterRsrc --keepParent Klick.app ../${{ matrix.asset_name }}
 
       - name: Prepare Linux Artifact
         if: runner.os == 'Linux'
         run: |
-          cd dist/ClickForge
-          chmod +x ClickForge
+          cd dist/Klick
+          chmod +x Klick
           zip -ry ../../${{ matrix.asset_name }} .
 
       - name: Upload Artifact
@@ -140,8 +136,8 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7
         with:
-          name: ClickForge-Setup
-          path: ClickForge-Setup.exe
+          name: Klick-Setup
+          path: Klick-Setup.exe
 
   release:
     name: Create GitHub Release
@@ -164,9 +160,9 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/ClickForge-Windows/ClickForge-Windows.zip
-            artifacts/ClickForge-Setup/ClickForge-Setup.exe
-            artifacts/ClickForge-macOS/ClickForge-macOS.zip
-            artifacts/ClickForge-Linux/ClickForge-Linux.zip
+            artifacts/Klick-Windows/Klick-Windows.zip
+            artifacts/Klick-Setup/Klick-Setup.exe
+            artifacts/Klick-macOS/Klick-macOS.zip
+            artifacts/Klick-Linux/Klick-Linux.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

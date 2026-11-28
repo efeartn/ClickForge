@@ -57,7 +57,7 @@ impl CoordinatePicker {
         let wayland_fs = false;
 
         let mut builder = ViewportBuilder::default()
-            .with_title("ClickForge Coordinate Picker")
+            .with_title("Klick Coordinate Picker")
             .with_decorations(false)
             .with_transparent(true)
             .with_always_on_top()
@@ -71,7 +71,7 @@ impl CoordinatePicker {
         let mut outcome = PickerOutcome::Pending;
         let opened_at = self.opened_at;
 
-        ctx.show_viewport_immediate(ViewportId::from_hash_of("clickforge_picker"), builder, |vctx, _class| {
+        ctx.show_viewport_immediate(ViewportId::from_hash_of("klick_picker"), builder, |vctx, _class| {
             vctx.set_cursor_icon(CursorIcon::Crosshair);
             vctx.request_repaint_after(Duration::from_millis(16));
 

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-/// Map Linux `<linux/input-event-codes.h>` key/button codes into ClickForge canonical hotkey names.
+/// Map Linux `<linux/input-event-codes.h>` key/button codes into Klick canonical hotkey names.
 #[allow(dead_code)]
 pub fn evdev_code_to_name(code: u16) -> Option<String> {
     let s: &str = match code {
@@ -397,7 +397,7 @@ pub mod linux_rt {
                         return None;
                     }
                 }
-                let setup = setup_device_name("ClickForge Virtual Mouse");
+                let setup = setup_device_name("Klick Virtual Mouse");
                 if libc::ioctl(fd, UI_DEV_SETUP, &setup) < 0 {
                     return None;
                 }
@@ -489,7 +489,7 @@ pub mod linux_rt {
                         return None;
                     }
                 }
-                let setup = setup_device_name("ClickForge Virtual Pointer");
+                let setup = setup_device_name("Klick Virtual Pointer");
                 if libc::ioctl(fd, UI_DEV_SETUP, &setup) < 0 {
                     return None;
                 }
@@ -549,7 +549,7 @@ pub mod linux_rt {
             };
             if name_len > 0 {
                 let txt = String::from_utf8_lossy(&dev_name[..(name_len as usize).min(128)]);
-                if txt.contains("ClickForge Virtual") {
+                if txt.contains("Klick Virtual") {
                     unsafe { libc::close(fd) };
                     continue;
                 }
@@ -622,7 +622,7 @@ pub mod linux_rt {
         }
         Some(format!(
             "Wayland native clicking & hotkeys need permission for {}.\n\
-             Run: sudo usermod -aG input $USER && echo 'KERNEL==\"uinput\", GROUP=\"input\", MODE=\"0660\"' | sudo tee /etc/udev/rules.d/99-clickforge.rules\n\
+             Run: sudo usermod -aG input $USER && echo 'KERNEL==\"uinput\", GROUP=\"input\", MODE=\"0660\"' | sudo tee /etc/udev/rules.d/99-klick.rules\n\
              Then log out and back in (or see README for Hyprland/Wayland setup).",
             missing.join(" and ")
         ))

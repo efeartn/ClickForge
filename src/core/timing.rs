@@ -16,10 +16,10 @@ impl HighResolutionTimer {
         #[cfg(windows)]
         {
             let ok = unsafe { windows_sys::Win32::Media::timeBeginPeriod(period_ms) == 0 };
-            return Self {
+            Self {
                 period: period_ms,
                 active: ok,
-            };
+            }
         }
         #[cfg(not(windows))]
         {

@@ -225,7 +225,7 @@ impl ClickEngine {
         let engine = Arc::clone(self);
         let sig_worker = Arc::clone(&stop_signal);
         let handle = thread::Builder::new()
-            .name("ClickForgeWorker".to_string())
+            .name("KlickWorker".to_string())
             .spawn(move || engine.run_worker(sanitized, sig_worker))
             .expect("failed to spawn clicker worker");
 
@@ -235,24 +235,25 @@ impl ClickEngine {
     }
 
     pub fn stop(&self, wait: bool) {
-        let handle = {
+        let (was_active, handle) = {
             let mut slot = self.worker.lock().unwrap_or_else(|e| e.into_inner());
-            self.active.store(false, Ordering::Release);
+            let was_active = self.active.swap(false, Ordering::AcqRel);
             if let Some(sig) = &slot.stop_signal {
                 sig.set();
             }
-            if wait {
-                slot.handle.take()
-            } else {
-                None
-            }
+            let h = if wait { slot.handle.take() } else { None };
+            (was_active, h)
         };
 
         {
             let mut t = self.timing.lock().unwrap_or_else(|e| e.into_inner());
             t.timestamps.clear();
-            if let Some(start) = t.run_start {
-                t.last_elapsed_secs = Instant::now().saturating_duration_since(start).as_secs_f64();
+            if was_active {
+                if let Some(start) = t.run_start.take() {
+                    t.last_elapsed_secs = Instant::now().saturating_duration_since(start).as_secs_f64();
+                }
+            } else {
+                t.run_start.take();
             }
         }
 
@@ -405,12 +406,16 @@ impl ClickEngine {
         if rel_offset != (0, 0) {
             self.backend.move_relative(-rel_offset.0, -rel_offset.1);
         }
-        self.active.store(false, Ordering::Release);
+        let was_active = self.active.swap(false, Ordering::AcqRel);
         {
             let mut t = self.timing.lock().unwrap_or_else(|e| e.into_inner());
             t.timestamps.clear();
-            if let Some(start) = t.run_start {
-                t.last_elapsed_secs = Instant::now().saturating_duration_since(start).as_secs_f64();
+            if was_active {
+                if let Some(start) = t.run_start.take() {
+                    t.last_elapsed_secs = Instant::now().saturating_duration_since(start).as_secs_f64();
+                }
+            } else {
+                t.run_start.take();
             }
         }
         self.release_held();
@@ -603,5 +608,26 @@ mod tests {
             }
         });
         assert_eq!((sum_dx, sum_dy), (0, 0));
+    }
+
+    #[test]
+    fn double_stop_preserves_elapsed_duration() {
+        let backend = Arc::new(DummyBackend::new((400, 400)));
+        let engine = Arc::new(ClickEngine::with_backend(backend, None));
+        let settings = ClickSettings {
+            interval_ms: 50.0,
+            corner_failsafe: false,
+            ..Default::default()
+        };
+        assert!(engine.start(settings));
+        thread::sleep(Duration::from_millis(25));
+        engine.stop(true);
+        let first_elapsed = engine.snapshot().elapsed_secs;
+        assert!(first_elapsed > 0.0);
+
+        thread::sleep(Duration::from_millis(30));
+        engine.stop(false);
+        let second_elapsed = engine.snapshot().elapsed_secs;
+        assert!((second_elapsed - first_elapsed).abs() < 1e-9);
     }
 }

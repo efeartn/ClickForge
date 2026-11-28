@@ -133,7 +133,7 @@ pub fn fmt_with_commas(n: u64) -> String {
     let bytes = s.as_bytes();
     let mut out = String::with_capacity(s.len() + s.len() / 3);
     for (idx, &b) in bytes.iter().enumerate() {
-        if idx > 0 && (bytes.len() - idx) % 3 == 0 {
+        if idx > 0 && (bytes.len() - idx).is_multiple_of(3) {
             out.push(',');
         }
         out.push(b as char);

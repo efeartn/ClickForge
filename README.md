@@ -1,21 +1,21 @@
 <div align="center">
 
-<img src="assets/icon.png" alt="ClickForge logo" width="84" />
+<img src="assets/icon.png" alt="Klick logo" width="84" />
 
-# ClickForge
+# Klick
 
 **High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux (Wayland / Hyprland & X11).**
 
 Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`, CoreGraphics, `/dev/uinput` + Hyprland IPC, X11 XTest), 1 ms multimedia timing (`timeBeginPeriod`), and a utilitarian **Carbon & Precision Emerald** palette.
 
-[![Latest Release](https://img.shields.io/github/v/release/efeartn/ClickForge?color=10A37F&label=Release)](https://github.com/efeartn/ClickForge/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/release/efeartn/Klick?color=10A37F&label=Release)](https://github.com/efeartn/Klick/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux%20(Wayland%20%2F%20X11)-52525B)](#download--install)
 [![Changelog](https://img.shields.io/badge/Changelog-History-3F3F46)](CHANGELOG.md)
 
-[![Download Windows Setup](https://img.shields.io/badge/Windows%20Installer-ClickForge--Setup.exe-10A37F?style=for-the-badge&logo=windows)](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe)
+[![Download Windows Setup](https://img.shields.io/badge/Windows%20Installer-Klick--Setup.exe-10A37F?style=for-the-badge&logo=windows)](https://github.com/efeartn/Klick/releases/latest/download/Klick-Setup.exe)
 &nbsp;
-[![Portable & Other Platforms](https://img.shields.io/badge/All%20Downloads-GitHub%20Releases-27272A?style=for-the-badge)](https://github.com/efeartn/ClickForge/releases/latest)
+[![Portable & Other Platforms](https://img.shields.io/badge/All%20Downloads-GitHub%20Releases-27272A?style=for-the-badge)](https://github.com/efeartn/Klick/releases/latest)
 
 </div>
 
@@ -27,34 +27,34 @@ Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`
   <tr>
     <td align="center" width="50%">
       <strong>Carbon Dark Mode</strong><br/><br/>
-      <img src="docs/screenshots/app-dark.png" alt="ClickForge Carbon Dark Mode" width="360" />
+      <img src="docs/screenshots/app-dark.png" alt="Klick Carbon Dark Mode" width="360" />
     </td>
     <td align="center" width="50%">
       <strong>Carbon Light Mode</strong><br/><br/>
-      <img src="docs/screenshots/app-light.png" alt="ClickForge Light Mode" width="360" />
+      <img src="docs/screenshots/app-light.png" alt="Klick Light Mode" width="360" />
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
       <strong>Windows Programs Setup</strong><br/><br/>
-      <img src="docs/screenshots/setup-prompt.png" alt="ClickForge Windows Setup Dialog" width="340" />
+      <img src="docs/screenshots/setup-prompt.png" alt="Klick Windows Setup Dialog" width="340" />
     </td>
     <td align="center" width="50%">
       <strong>Automatic Update Prompt</strong><br/><br/>
-      <img src="docs/screenshots/update-prompt.png" alt="ClickForge Update Prompt" width="340" />
+      <img src="docs/screenshots/update-prompt.png" alt="Klick Update Prompt" width="340" />
     </td>
   </tr>
 </table>
 
 ---
 
-## Pure Native Performance (`v4.1.1 — "Ferrous"`)
+## Pure Native Performance (`v4.2.0 — "Ferrous"`)
 
-Rewritten from the ground up in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
+Formerly **ClickForge** — renamed to **Klick** with automatic config migration from `%LOCALAPPDATA%\ClickForge\config.json` (and `~/.config/ClickForge/config.json`). Built in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
 
 - **Single Native Executable:** Ships as a standalone **`~5 MB`** binary with zero runtime dependencies or temporary extraction delays.
 - **Instant Launch & Low Overhead:** Opens cleanly in under **`200 ms`**, relaxes repaints when settled, and draws crisp procedural vector header icons directly via GPU shaders.
-- **Adaptive & Compact Workspace:** Inactive sections (`Fixed XY` coordinates while following cursor, fixed repeat count in `Infinite` mode, and `Humanizer` fields while disabled) collapse automatically to stay compact on any display.
+- **Adaptive Workspace & AltSnap Ready:** Inactive sections (`Fixed XY`, fixed repeat count, and `Humanizer` fields) collapse cleanly while keeping a standard resizable Win32 frame (`WS_THICKFRAME`) that works seamlessly with **AltSnap** and OS window snapping.
 - **Follow Cursor & `10 ms` Default:** Ready immediately on launch to click at your pointer (`10 ms` / `~100 CPS`), scaling from `1 click/hour` up to **`1,000 CPS`** (`1 ms` interval).
 - **Zero-Delay Global Triggers & `Esc` Panic:** Press **`F6`** (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the keycap button, or press **`Esc`** / fling pointer to `(0, 0)` to stop immediately—even from fullscreen apps.
 
@@ -64,25 +64,25 @@ Rewritten from the ground up in **Rust** for instant startup, minimal footprint,
 
 | Platform | Package | Notes |
 | --- | --- | --- |
-| **Windows (Installer)** | [`ClickForge-Setup.exe`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Setup.exe) | **Recommended.** Installs to `%LOCALAPPDATA%\Programs\ClickForge`, registers Start Menu & Windows Installed Apps without admin UAC prompts, and enables automatic self-updates. |
-| **Windows (Portable)** | [`ClickForge-Windows.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Windows.zip) | Extract and run `ClickForge.exe`. Includes a **Setup** button in the header to install into Windows Programs anytime. |
-| **macOS** | [`ClickForge-macOS.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-macOS.zip) | Unzip `ClickForge.app`. Grant **Accessibility** access under *System Settings → Privacy & Security* for global hotkeys and mouse injection. |
-| **Linux (Wayland / Hyprland & X11)** | [`ClickForge-Linux.zip`](https://github.com/efeartn/ClickForge/releases/latest/download/ClickForge-Linux.zip) | Unzip and run `./ClickForge`. Works natively on **Hyprland / Wayland** (see one-time permissions below) and **X11 / Xorg** out of the box. |
+| **Windows (Installer)** | [`Klick-Setup.exe`](https://github.com/efeartn/Klick/releases/latest/download/Klick-Setup.exe) | **Recommended.** Installs to `%LOCALAPPDATA%\Programs\Klick`, registers Start Menu & Windows Installed Apps without admin UAC prompts, and enables automatic self-updates. |
+| **Windows (Portable)** | [`Klick-Windows.zip`](https://github.com/efeartn/Klick/releases/latest/download/Klick-Windows.zip) | Extract and run `Klick.exe`. Includes a **Setup** button in the header to install into Windows Programs anytime. |
+| **macOS** | [`Klick-macOS.zip`](https://github.com/efeartn/Klick/releases/latest/download/Klick-macOS.zip) | Unzip `Klick.app`. Grant **Accessibility** access under *System Settings → Privacy & Security* for global hotkeys and mouse injection. |
+| **Linux (Wayland / Hyprland & X11)** | [`Klick-Linux.zip`](https://github.com/efeartn/Klick/releases/latest/download/Klick-Linux.zip) | Unzip and run `./Klick`. Works natively on **Hyprland / Wayland** (see one-time permissions below) and **X11 / Xorg** out of the box. |
 
 ### Quick Start
 
 1. Download the release package for your OS above.
-2. Launch **ClickForge** (`Follow Cursor`, `10 ms` / `~100 CPS`, and `F6` work immediately).
+2. Launch **Klick** (`Follow Cursor`, `10 ms` / `~100 CPS`, and `F6` work immediately).
 3. Press **`F6`** (or click **START**) to begin; press **`Esc`** or move the cursor to `(0, 0)` to panic-stop anytime.
 
 ### Linux Wayland & Hyprland Setup
 
-Wayland isolates display clients from reading global keys or injecting synthetic clicks directly, so ClickForge uses Linux kernel `/dev/uinput` + `evdev` (plus direct **Hyprland socket IPC** for multi-monitor bounds and exact `Fixed XY` cursor moves):
+Wayland isolates display clients from reading global keys or injecting synthetic clicks directly, so Klick uses Linux kernel `/dev/uinput` + `evdev` (plus direct **Hyprland socket IPC** for multi-monitor bounds and exact `Fixed XY` cursor moves):
 
 1. Grant your user permission to read input events (`evdev` global hotkeys) and create a virtual mouse (`/dev/uinput` clicks):
    ```bash
    sudo usermod -aG input "$USER"
-   echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | sudo tee /etc/udev/rules.d/99-clickforge.rules
+   echo 'KERNEL=="uinput", GROUP="input", MODE="0660"' | sudo tee /etc/udev/rules.d/99-klick.rules
    sudo udevadm control --reload-rules && sudo udevadm trigger /dev/uinput
    ```
 2. Log out and log back into your session so group membership takes effect.
@@ -121,8 +121,8 @@ Wayland isolates display clients from reading global keys or injecting synthetic
 Requires the **Rust stable toolchain** ([rustup.rs](https://rustup.rs/)).
 
 ```bash
-git clone https://github.com/efeartn/ClickForge.git
-cd ClickForge
+git clone https://github.com/efeartn/Klick.git
+cd Klick
 cargo run --release
 ```
 
@@ -144,10 +144,10 @@ cargo run --release -- --smoke-test
 ## Project Layout
 
 ```text
-ClickForge/
+Klick/
 ├── src/
 │   ├── main.rs                 # Entrypoint, CLI (--version / --smoke-test), eframe setup
-│   ├── meta.rs                 # App name, version (4.1.0), codename (Ferrous), embedded icon
+│   ├── meta.rs                 # App name, version (4.2.0), codename (Ferrous), embedded icon
 │   ├── core/
 │   │   ├── clicker.rs          # Lock-free telemetry, Humanizer worker, corner failsafe
 │   │   ├── config.rs           # Schema-validated persistent config & profile presets
@@ -168,7 +168,7 @@ ClickForge/
 │       └── widgets.rs          # Segmented pills, keycap button, toggle switch, numeric fields
 ├── assets/                     # App icons (.ico, .icns, .png, .svg)
 ├── docs/screenshots/           # Dark, light, Windows setup, and updater previews
-├── installer/ClickForge.iss    # Inno Setup 6 script for ClickForge-Setup.exe
+├── installer/Klick.iss         # Inno Setup 6 script for Klick-Setup.exe
 ├── Cargo.toml                  # Crate manifest and release optimization profile
 ├── build.rs                    # Windows resource & icon embedding
 ├── CHANGELOG.md

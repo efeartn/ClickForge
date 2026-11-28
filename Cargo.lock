@@ -316,26 +316,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clickforge"
-version = "4.1.1"
-dependencies = [
- "eframe",
- "image",
- "libc",
- "open",
- "rand",
- "rand_distr",
- "serde",
- "serde_json",
- "sha2",
- "ureq",
- "windows-sys 0.59.0",
- "winresource",
- "x11rb",
- "zip",
-]
-
-[[package]]
 name = "clipboard-win"
 version = "5.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1272,6 +1252,26 @@ name = "khronos_api"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
+
+[[package]]
+name = "klick"
+version = "4.2.0"
+dependencies = [
+ "eframe",
+ "image",
+ "libc",
+ "open",
+ "rand",
+ "rand_distr",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq",
+ "windows-sys 0.59.0",
+ "winresource",
+ "x11rb",
+ "zip",
+]
 
 [[package]]
 name = "libc"

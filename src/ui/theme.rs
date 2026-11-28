@@ -110,7 +110,7 @@ pub fn system_prefers_dark(ctx: &egui::Context) -> bool {
             return dark;
         }
     }
-    !matches!(ctx.style().visuals.dark_mode, false)
+    ctx.style().visuals.dark_mode
 }
 
 #[cfg(target_os = "windows")]

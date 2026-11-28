@@ -1,6 +1,18 @@
 # Changelog
 
-All notable changes to **ClickForge** are documented in this file.
+All notable changes to **Klick** (formerly **ClickForge**) are documented in this file.
+
+## [4.2.0] - 2026-11-28 — "Ferrous"
+
+### Changed (Minimalist Rebrand: ClickForge -> Klick)
+- **Renamed Application to `Klick`**: Updated package (`klick`), binary (`Klick` / `Klick.exe` / `Klick.app`), Inno Setup installer (`installer/Klick.iss` -> `Klick-Setup.exe`), Windows Programs & Registry entries, Linux uinput/udev naming (`99-klick.rules`), GitHub Releases workflow, and documentation to `Klick` (`efeartn/Klick`).
+- **Seamless Config Migration**: Automatically imports existing `ClickForge/config.json` settings into `Klick/config.json` on first launch so presets, hotkeys, and preferences carry over automatically.
+
+### Fixed
+- **Banner & Modal Action Bar Height Bug (`src/ui/app.rs`)**: Replaced bare `Layout::right_to_left(Align::Center)` inside vertical containers in `render_banner()` and `SetupPrompt` with bounded-height rows (`allocate_ui_with_layout`), fixing the bug where banners stretched vertically across the entire window and pushed all cards off-screen.
+- **Windows AltSnap Compatibility (`src/main.rs`, `src/ui/app.rs`)**: Restored standard resizable Win32 window frame flags (`WS_THICKFRAME` via `.with_resizable(true)`), wrapped the main panel in a scroll-safe container, and restricted auto-height `InnerSize` adjustments strictly to section/banner transitions so **AltSnap** move, snap, and resize actions work cleanly without snapping back.
+- **Elapsed Duration Accuracy (`src/core/clicker.rs`)**: Guarded `ClickEngine::stop()` with atomic `active.swap(false, AcqRel)` and `run_start.take()` so follow-up stops on the UI thread no longer overwrite stop-time elapsed duration.
+- **Modal Dismissal & Chunked Setup Progress (`src/ui/app.rs`)**: Modals now dismiss cleanly on `Esc` or backdrop click, and Setup downloads display byte progress even when `Content-Length` is omitted.
 
 ## [4.1.1] - 2026-11-27 — "Ferrous"
 

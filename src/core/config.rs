@@ -6,6 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::core::hotkeys::normalize_binding;
 use crate::core::validation::{clamp_f64, to_interval_ms};
+use crate::meta::{APP_NAME, LEGACY_APP_NAME};
 
 pub const SCHEMA_VERSION: u32 = 5;
 pub const PROFILE_NAMES: [&str; 4] = ["Default", "Fast", "Humanized", "Custom"];
@@ -190,7 +191,7 @@ impl Default for AppConfig {
 }
 
 impl AppConfig {
-    pub fn default_config_path() -> PathBuf {
+    fn config_base_dir() -> PathBuf {
         #[cfg(target_os = "windows")]
         let base = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
@@ -210,11 +211,31 @@ impl AppConfig {
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
             .unwrap_or_else(|| PathBuf::from("."));
 
-        base.join("ClickForge").join("config.json")
+        base
+    }
+
+    pub fn default_config_path() -> PathBuf {
+        Self::config_base_dir().join(APP_NAME).join("config.json")
+    }
+
+    pub fn legacy_config_path() -> PathBuf {
+        Self::config_base_dir()
+            .join(LEGACY_APP_NAME)
+            .join("config.json")
     }
 
     pub fn load_default() -> Self {
-        Self::load_from_path(Self::default_config_path())
+        Self::load_default_from_paths(Self::default_config_path(), Self::legacy_config_path())
+    }
+
+    pub fn load_default_from_paths(new_path: PathBuf, legacy_path: PathBuf) -> Self {
+        if new_path.is_file() || !legacy_path.is_file() {
+            return Self::load_from_path(new_path);
+        }
+        let mut cfg = Self::load_from_path(legacy_path);
+        cfg.path = Some(new_path);
+        let _ = cfg.save();
+        cfg
     }
 
     pub fn load_from_path(path: PathBuf) -> Self {
@@ -433,5 +454,28 @@ mod tests {
         cfg2.import_profile_json(&exported).unwrap();
         assert_eq!(cfg2.profile, "Custom");
         assert!(cfg2.settings.humanize);
+    }
+
+    #[test]
+    fn load_from_legacy_migrates_to_new_path() {
+        let root = std::env::temp_dir().join("klick_test_legacy_cfg_migration");
+        let _ = fs::remove_dir_all(&root);
+        let legacy_path = root.join("ClickForge").join("config.json");
+        let new_path = root.join("Klick").join("config.json");
+
+        let legacy = AppConfig {
+            hotkey: "f8".to_string(),
+            theme: "Light".to_string(),
+            path: Some(legacy_path.clone()),
+            ..Default::default()
+        };
+        legacy.save().unwrap();
+
+        let migrated = AppConfig::load_default_from_paths(new_path.clone(), legacy_path);
+        assert_eq!(migrated.hotkey, "f8");
+        assert_eq!(migrated.theme, "Light");
+        assert!(new_path.is_file());
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

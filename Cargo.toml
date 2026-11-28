@@ -1,14 +1,14 @@
 [package]
-name = "clickforge"
-version = "4.1.1"
+name = "klick"
+version = "4.2.0"
 edition = "2021"
 license = "GPL-3.0"
 description = "High-precision, lightweight native desktop auto-clicker for Windows, macOS, and Linux."
-repository = "https://github.com/efeartn/ClickForge"
+repository = "https://github.com/efeartn/Klick"
 build = "build.rs"
 
 [[bin]]
-name = "ClickForge"
+name = "Klick"
 path = "src/main.rs"
 
 [profile.release]

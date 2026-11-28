@@ -1,6 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
+use crate::meta::APP_NAME;
+
 /// Returns `(left, top, width, height)` in global screen points/pixels.
 pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
     #[cfg(target_os = "windows")]
@@ -15,12 +18,12 @@ pub fn virtual_screen_bounds() -> Option<(i32, i32, i32, i32)> {
             if w <= 0 || h <= 0 {
                 return None;
             }
-            return Some((
+            Some((
                 GetSystemMetrics(SM_XVIRTUALSCREEN),
                 GetSystemMetrics(SM_YVIRTUALSCREEN),
                 w,
                 h,
-            ));
+            ))
         }
     }
 
@@ -111,10 +114,9 @@ pub fn startup_warnings() -> Vec<String> {
             fn AXIsProcessTrusted() -> bool;
         }
         if !unsafe { AXIsProcessTrusted() } {
-            warnings.push(
-                "ClickForge needs Accessibility access for global hotkeys and mouse clicks.\nOpen System Settings -> Privacy & Security -> Accessibility and enable ClickForge."
-                    .to_string(),
-            );
+            warnings.push(format!(
+                "{APP_NAME} needs Accessibility access for global hotkeys and mouse clicks.\nOpen System Settings -> Privacy & Security -> Accessibility and enable {APP_NAME}."
+            ));
         }
     }
 
@@ -128,7 +130,7 @@ pub fn startup_warnings() -> Vec<String> {
     warnings
 }
 
-/// Remove legacy `_internal/.migrated` markers or leftover `.cfbak` files after an update.
+/// Remove legacy `_internal/.migrated` markers or leftover `.klbak`/`.cfbak` files after an update.
 pub fn cleanup_legacy_migration_marker() {
     let Ok(exe) = std::env::current_exe() else {
         return;
@@ -141,9 +143,11 @@ pub fn cleanup_legacy_migration_marker() {
         let _ = fs::remove_dir_all(&internal);
     }
     if let Some(name) = exe.file_name().and_then(|s| s.to_str()) {
-        let bak = dir.join(format!("{name}.cfbak"));
-        if bak.is_file() {
-            let _ = fs::remove_file(&bak);
+        for ext in [".klbak", ".cfbak"] {
+            let bak = dir.join(format!("{name}{ext}"));
+            if bak.is_file() {
+                let _ = fs::remove_file(&bak);
+            }
         }
     }
 }

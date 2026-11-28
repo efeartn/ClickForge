@@ -1,13 +1,13 @@
-# Contributing to ClickForge
+# Contributing to Klick
 
-Thank you for considering contributing to ClickForge!
+Thank you for considering contributing to Klick!
 
 ## Development Setup
 
 1. **Fork and Clone**:
    ```bash
-   git clone https://github.com/efeartn/ClickForge.git
-   cd ClickForge
+   git clone https://github.com/efeartn/Klick.git
+   cd Klick
    ```
 2. **Install Rust** via [rustup.rs](https://rustup.rs/) (stable toolchain).
 3. **Linux X11 / OpenGL Build Dependencies** (Ubuntu/Debian):
@@ -35,5 +35,5 @@ Thank you for considering contributing to ClickForge!
 ## Issue Reporting
 
 When reporting a bug, please include:
-- OS and ClickForge version (`ClickForge --version`).
+- OS and Klick version (`Klick --version`).
 - Reproduction steps, expected behavior, and actual behavior.
