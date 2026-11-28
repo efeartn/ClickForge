@@ -52,8 +52,8 @@ pub fn paint_header_icon(painter: &Painter, rect: Rect, kind: HeaderIconKind, co
             }
         }
         HeaderIconKind::ThemeDark => {
-            // Crescent moon built cleanly from a circle arc
-            draw_crescent(painter, pt(7.2, 7.0), 4.9, color);
+            // Crescent moon built from exact circle-circle intersection geometry
+            draw_crescent(painter, pt(7.0, 7.0), 5.0, color);
         }
         HeaderIconKind::ThemeSystem => {
             let monitor = Rect::from_min_max(pt(1.5, 2.2), pt(12.5, 9.8));
@@ -69,12 +69,12 @@ pub fn paint_header_icon(painter: &Painter, rect: Rect, kind: HeaderIconKind, co
                 painter.line_segment([pt(3.0, 7.5), pt(11.0, 7.5)], Stroke::new(1.6_f32, color));
                 painter.line_segment([pt(7.0, 7.5), pt(7.0, 12.4)], Stroke::new(1.5_f32, color));
             } else {
-                // Tilted neutral pushpin
-                painter.line_segment([pt(5.5, 2.5), pt(10.5, 2.5)], Stroke::new(1.4_f32, color));
-                painter.line_segment([pt(5.8, 2.5), pt(5.0, 6.8)], stroke);
-                painter.line_segment([pt(10.2, 2.5), pt(9.0, 6.8)], stroke);
-                painter.line_segment([pt(3.5, 7.0), pt(10.5, 7.0)], Stroke::new(1.4_f32, color));
-                painter.line_segment([pt(7.0, 7.0), pt(7.0, 12.0)], Stroke::new(1.4_f32, color));
+                // Symmetric outlined pushpin matching active PinOn geometry
+                painter.line_segment([pt(4.5, 2.2), pt(9.5, 2.2)], Stroke::new(1.4_f32, color));
+                painter.line_segment([pt(4.9, 2.2), pt(5.3, 7.2)], stroke);
+                painter.line_segment([pt(9.1, 2.2), pt(8.7, 7.2)], stroke);
+                painter.line_segment([pt(3.2, 7.3), pt(10.8, 7.3)], Stroke::new(1.4_f32, color));
+                painter.line_segment([pt(7.0, 7.3), pt(7.0, 12.3)], Stroke::new(1.4_f32, color));
             }
         }
         HeaderIconKind::Update => {
@@ -107,18 +107,36 @@ fn draw_arc(painter: &Painter, center: Pos2, r: f32, a0: f32, a1: f32, stroke: S
     painter.add(Shape::line(pts, stroke));
 }
 
-fn draw_crescent(painter: &Painter, center: Pos2, r: f32, color: Color32) {
-    // Draw clean crescent outline/shape
-    let mut outer = Vec::with_capacity(24);
-    for i in 0..=16 {
-        let a = 0.55 + (i as f32 / 16.0) * (std::f32::consts::TAU - 2.1);
-        outer.push(pos2(center.x + r * a.cos(), center.y + r * a.sin()));
+fn draw_crescent(painter: &Painter, c1: Pos2, r1: f32, color: Color32) {
+    // Exact circle-circle intersection between outer moon disc (c1, r1) and cutout disc (c2, r2)
+    let c2 = c1 + vec2(2.6, -2.1);
+    let r2 = 4.2_f32;
+    let delta = c2 - c1;
+    let d = delta.length();
+    let a = (r1 * r1 - r2 * r2 + d * d) / (2.0 * d);
+    let alpha = (a / r1).clamp(-1.0, 1.0).acos();
+    let beta = ((d - a) / r2).clamp(-1.0, 1.0).acos();
+    let base1 = delta.y.atan2(delta.x);
+    let base2 = base1 + std::f32::consts::PI;
+
+    let mut pts = Vec::with_capacity(34);
+    let outer_steps = 20;
+    let outer_start = base1 + alpha;
+    let outer_sweep = std::f32::consts::TAU - 2.0 * alpha;
+    for i in 0..=outer_steps {
+        let t = i as f32 / outer_steps as f32;
+        let ang = outer_start + outer_sweep * t;
+        pts.push(pos2(c1.x + r1 * ang.cos(), c1.y + r1 * ang.sin()));
     }
-    let offset = center + vec2(r * 0.42, -r * 0.28);
-    let inner_r = r * 0.78;
-    for i in (0..=12).rev() {
-        let a = 0.9 + (i as f32 / 12.0) * 3.2;
-        outer.push(pos2(offset.x + inner_r * a.cos(), offset.y + inner_r * a.sin()));
+
+    let inner_steps = 14;
+    let inner_start = base2 + beta;
+    let inner_end = base2 - beta;
+    for i in 1..inner_steps {
+        let t = i as f32 / inner_steps as f32;
+        let ang = inner_start + (inner_end - inner_start) * t;
+        pts.push(pos2(c2.x + r2 * ang.cos(), c2.y + r2 * ang.sin()));
     }
-    painter.add(Shape::closed_line(outer, Stroke::new(1.5_f32, color)));
+
+    painter.add(Shape::closed_line(pts, Stroke::new(1.45_f32, color)));
 }

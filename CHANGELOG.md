@@ -2,6 +2,23 @@
 
 All notable changes to **Klick** are documented in this file.
 
+## [1.1.0] - 2026-11-28
+
+### Added
+- **Live CPS Sparkline & Fixed Progress Bar (`src/ui/widgets.rs`, `src/ui/app.rs`)**: Added a compact 120 ms rolling CPS trend sparkline beside `Reset` and a 3 px emerald progress bar beneath telemetry during `Fixed` repeat runs.
+- **Breathing Active Status Pill & Picker Target Pulse**: Added a subtle breathing halo on the header `Running` / `Arming` status dot and a pulsing target ring in the Coordinate Picker overlay.
+- **Humanizer Hold Cap Warning**: Displays an inline amber notice when `Hold Duty` exceeds the automatic interval safety cap (`60%` of click period).
+- **Legacy ClickForge Cleanup (`installer/Klick.iss`, `src/core/installer.rs`)**: Added a default-checked cleanup task in `Klick-Setup.exe` and portable installer cleanup to remove legacy `ClickForge` Programs folders, shortcuts, and Uninstall registry entries.
+
+### Changed
+- **Cursor-Anchored Coordinate Picker HUD (`src/ui/picker.rs`)**: Anchored the floating `X / Y` HUD pill near the active cursor with automatic edge flipping instead of centering across dual-monitor bezels.
+- **UI & Font Polish (`src/ui/icons.rs`, `src/ui/theme.rs`)**: Rebuilt the Dark Mode crescent moon with exact circle-circle intersection geometry (eliminating the cusp seam), centered the unpinned Pushpin icon, cached Windows System theme registry checks for `1.5 s`, added macOS `SFNSMono`/`Menlo`/`Monaco` font fallbacks, and renamed internal font keys to `klick_ui`/`klick_mono`.
+- **Streamlined Legacy Config Baggage (`src/core/config.rs`, `src/core/system.rs`, `src/core/updater.rs`)**: Removed legacy `ClickForge/config.json` path migration and dead `_internal` / `.cfbak` cleanup code.
+
+### Fixed
+- **Follow-Cursor UI Start Self-Click (`src/ui/app.rs`)**: Clicking **START** with the mouse in `Follow Cursor` mode now triggers a 2-second cancellable **Arming** countdown (amber button / `Esc` to cancel) so Klick never clicks its own **STOP** button, while global hotkeys and `Fixed XY` remain instant (`0 ms`).
+- **Per-Run Fixed Repeat & Double-Click Counters (`src/core/clicker.rs`)**: Tracked `run_clicks` separately from session `total` and scaled `target` by `2x` cadence so repeated `Fixed` runs show `Run: 10 / 10` instead of `14 / 10` or `20 / 10`.
+
 ## [1.0.0] - 2026-11-28
 
 ### Added & Changed

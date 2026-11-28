@@ -14,7 +14,7 @@ use crate::core::clicker::{ClickEngine, ClickSettings};
 use crate::core::config::AppConfig;
 use crate::core::hotkeys::normalize_binding;
 use crate::core::input_backend::DummyBackend;
-use crate::core::system::cleanup_legacy_migration_marker;
+use crate::core::system::cleanup_update_backups;
 use crate::core::updater::parse_version;
 use crate::meta::{APP_NAME, ICON_PNG, VERSION};
 use crate::ui::app::{KlickApp, StartupOptions};
@@ -77,7 +77,7 @@ fn main() -> eframe::Result<()> {
         std::process::exit(code);
     }
 
-    cleanup_legacy_migration_marker();
+    cleanup_update_backups();
 
     let mut preview_theme: Option<String> = None;
     let mut preview_dialog: Option<String> = None;

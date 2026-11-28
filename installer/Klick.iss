@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
 #endif
 
 #define AppName "Klick"
@@ -38,6 +38,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
+Name: "cleanlegacy"; Description: "Remove legacy ClickForge installation and shortcuts"; GroupDescription: "Cleanup:"
 
 [Files]
 Source: "..\dist\{#AppName}\Klick.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -49,3 +50,30 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  LegacyDir, LegacyStartMenu, LegacyDesktopLnk: string;
+begin
+  if (CurStep = ssPostInstall) and WizardIsTaskSelected('cleanlegacy') then
+  begin
+    LegacyDir := ExpandConstant('{localappdata}\Programs\ClickForge');
+    if DirExists(LegacyDir) then
+      DelTree(LegacyDir, True, True, True);
+
+    LegacyStartMenu := ExpandConstant('{userprograms}\ClickForge');
+    if DirExists(LegacyStartMenu) then
+      DelTree(LegacyStartMenu, True, True, True);
+
+    LegacyDesktopLnk := ExpandConstant('{userdesktop}\ClickForge.lnk');
+    if FileExists(LegacyDesktopLnk) then
+      DeleteFile(LegacyDesktopLnk);
+
+    if RegKeyExists(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge') then
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge');
+
+    if RegKeyExists(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F6D7C4A-3A2B-4E1C-9D8A-1F2E3D4C5B6A}_is1') then
+      RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F6D7C4A-3A2B-4E1C-9D8A-1F2E3D4C5B6A}_is1');
+  end;
+end;

@@ -478,10 +478,6 @@ for ($try = 1; $try -le 15; $try++) {
 }
 
 if ($swapped) {
-    $legacyInternal = [System.IO.Path]::Combine($dstDir, '_internal')
-    if ([System.IO.Directory]::Exists($legacyInternal)) {
-        try { [System.IO.Directory]::Delete($legacyInternal, $true) } catch {}
-    }
     if ([System.IO.File]::Exists($bakExe)) {
         try { [System.IO.File]::Delete($bakExe) } catch {}
     }
@@ -651,15 +647,13 @@ mod tests {
         let dst = root.join("dst");
         let work = root.join("work");
         let src = work.join("staged");
-        let legacy_internal = dst.join("_internal");
-        fs::create_dir_all(&legacy_internal).unwrap();
+        fs::create_dir_all(&dst).unwrap();
         fs::create_dir_all(&src).unwrap();
 
         let dst_exe = dst.join(APP_EXE);
         let src_exe = src.join(APP_EXE);
         fs::write(&dst_exe, b"OLD_BINARY_PAYLOAD").unwrap();
-        fs::write(legacy_internal.join("stale.dll"), b"OLD_RUNTIME").unwrap();
-        fs::write(&src_exe, b"NEW_NATIVE_RUST_BINARY_V1_0_0").unwrap();
+        fs::write(&src_exe, b"NEW_NATIVE_RUST_BINARY_V1_1_0").unwrap();
 
         let script = work.join("apply_update.ps1");
         let normalized = APPLY_UPDATE_PS1.replace("\r\n", "\n").replace('\n', "\r\n");
@@ -697,9 +691,8 @@ mod tests {
             String::from_utf8_lossy(&output.stderr),
             log
         );
-        assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V1_0_0");
+        assert_eq!(fs::read(&dst_exe).unwrap(), b"NEW_NATIVE_RUST_BINARY_V1_1_0");
         assert!(!dst.join("Klick.exe.klbak").exists());
-        assert!(!legacy_internal.exists());
         assert!(!src.exists());
         assert!(log.contains("Update installed"), "unexpected log: {log}");
 

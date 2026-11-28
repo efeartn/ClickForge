@@ -48,13 +48,14 @@ Built in pure **Rust** with `egui` / `eframe`, native OS input APIs (`SendInput`
 
 ---
 
-## Pure Native Performance (`v1.0.0`)
+## Pure Native Performance (`v1.1.0`)
 
-Formerly **ClickForge** — renamed to **Klick** with automatic config migration from `%LOCALAPPDATA%\ClickForge\config.json` (and `~/.config/ClickForge/config.json`). Built in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
+Standalone native desktop auto-clicker built in **Rust** for instant startup, minimal footprint, and deterministic click timing across Windows, macOS, and Linux:
 
 - **Single Native Executable:** Ships as a standalone **`~5 MB`** binary with zero runtime dependencies or temporary extraction delays.
-- **Instant Launch & Low Overhead:** Opens cleanly in under **`200 ms`**, relaxes repaints when settled, and draws crisp procedural vector header icons directly via GPU shaders.
-- **Adaptive Workspace & AltSnap Ready:** Inactive sections (`Fixed XY`, fixed repeat count, and `Humanizer` fields) collapse cleanly while keeping a standard resizable Win32 frame (`WS_THICKFRAME`) that works seamlessly with **AltSnap** and OS window snapping.
+- **Instant Launch & Live Telemetry:** Opens cleanly in under **`200 ms`** with a live CPS sparkline, per-run Fixed progress bar, breathing status pill, and crisp procedural vector header icons.
+- **Safe & Adaptive Workspace:** Inactive sections (`Fixed XY`, fixed repeat count, and `Humanizer` fields) collapse cleanly while keeping a standard resizable Win32 frame (`WS_THICKFRAME`) compatible with **AltSnap**, plus a 2-second cancellable safety countdown when clicking **START** in `Follow Cursor` mode.
+- **Multi-Monitor Coordinate Picker:** Fullscreen crosshair overlay with a pulsing target ring and cursor-anchored coordinate pill that never straddles dual-monitor bezels.
 - **Follow Cursor & `10 ms` Default:** Ready immediately on launch to click at your pointer (`10 ms` / `~100 CPS`), scaling from `1 click/hour` up to **`1,000 CPS`** (`1 ms` interval).
 - **Zero-Delay Global Triggers & `Esc` Panic:** Press **`F6`** (`Toggle` or `Hold`), bind **Mouse4 / Mouse5** or Numpad keys via the keycap button, or press **`Esc`** / fling pointer to `(0, 0)` to stop immediately—even from fullscreen apps.
 
@@ -147,7 +148,7 @@ cargo run --release -- --smoke-test
 Klick/
 ├── src/
 │   ├── main.rs                 # Entrypoint, CLI (--version / --smoke-test), eframe setup
-│   ├── meta.rs                 # App name, version (1.0.0), embedded icon
+│   ├── meta.rs                 # App name, version (1.1.0), embedded icon
 │   ├── core/
 │   │   ├── clicker.rs          # Lock-free telemetry, Humanizer worker, corner failsafe
 │   │   ├── config.rs           # Schema-validated persistent config & profile presets

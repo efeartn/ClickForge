@@ -83,6 +83,7 @@ pub enum StopReason {
 pub struct EngineSnapshot {
     pub active: bool,
     pub total: u64,
+    pub run_clicks: u64,
     pub target: u64,
     pub cps: usize,
     pub elapsed_secs: f64,
@@ -107,6 +108,7 @@ pub struct ClickEngine {
     worker: Mutex<WorkerSlot>,
     active: AtomicBool,
     click_count: AtomicU64,
+    run_clicks: AtomicU64,
     target_count: AtomicU64,
     held_button: Mutex<Option<MouseButton>>,
     timing: Mutex<TimingState>,
@@ -131,6 +133,7 @@ impl ClickEngine {
             }),
             active: AtomicBool::new(false),
             click_count: AtomicU64::new(0),
+            run_clicks: AtomicU64::new(0),
             target_count: AtomicU64::new(0),
             held_button: Mutex::new(None),
             timing: Mutex::new(TimingState {
@@ -148,6 +151,7 @@ impl ClickEngine {
     pub fn snapshot(&self) -> EngineSnapshot {
         let active = self.is_active();
         let total = self.click_count.load(Ordering::Relaxed);
+        let run_clicks = self.run_clicks.load(Ordering::Relaxed);
         let target = self.target_count.load(Ordering::Relaxed);
         let now = Instant::now();
         let cutoff = now.checked_sub(Duration::from_secs(1));
@@ -177,6 +181,7 @@ impl ClickEngine {
         EngineSnapshot {
             active,
             total,
+            run_clicks,
             target,
             cps,
             elapsed_secs,
@@ -186,6 +191,7 @@ impl ClickEngine {
     pub fn reset_stats(&self) {
         self.click_count.store(0, Ordering::Relaxed);
         if !self.is_active() {
+            self.run_clicks.store(0, Ordering::Relaxed);
             self.target_count.store(0, Ordering::Relaxed);
         }
         let mut t = self.timing.lock().unwrap_or_else(|e| e.into_inner());
@@ -212,8 +218,12 @@ impl ClickEngine {
 
         let sanitized = settings.sanitized();
         let stop_signal = Arc::new(StopSignal::new());
-        self.target_count
-            .store(sanitized.repeat_count, Ordering::Relaxed);
+        let clicks_per_action = if sanitized.double_click { 2u64 } else { 1u64 };
+        self.run_clicks.store(0, Ordering::Relaxed);
+        self.target_count.store(
+            sanitized.repeat_count.saturating_mul(clicks_per_action),
+            Ordering::Relaxed,
+        );
         {
             let mut t = self.timing.lock().unwrap_or_else(|e| e.into_inner());
             t.timestamps.clear();
@@ -364,6 +374,7 @@ impl ClickEngine {
                 }
 
                 self.click_count.fetch_add(1, Ordering::Relaxed);
+                self.run_clicks.fetch_add(1, Ordering::Relaxed);
                 self.record_timestamp(Instant::now());
 
                 if idx + 1 < clicks_per_action {
@@ -629,5 +640,64 @@ mod tests {
         engine.stop(false);
         let second_elapsed = engine.snapshot().elapsed_secs;
         assert!((second_elapsed - first_elapsed).abs() < 1e-9);
+    }
+
+    #[test]
+    fn second_fixed_run_resets_run_clicks_and_preserves_session_total() {
+        let backend = Arc::new(DummyBackend::new((350, 350)));
+        let (tx, rx) = mpsc::channel();
+        let engine = Arc::new(ClickEngine::with_backend(
+            backend,
+            Some(Arc::new(move |r| {
+                let _ = tx.send(r);
+            })),
+        ));
+        let settings = ClickSettings {
+            interval_ms: 2.0,
+            repeat_count: 4,
+            corner_failsafe: false,
+            ..Default::default()
+        };
+
+        assert!(engine.start(settings.clone()));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), StopReason::Completed);
+        thread::sleep(Duration::from_millis(10));
+
+        assert!(engine.start(settings));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), StopReason::Completed);
+        thread::sleep(Duration::from_millis(10));
+
+        let snap = engine.snapshot();
+        assert_eq!(snap.run_clicks, 4);
+        assert_eq!(snap.target, 4);
+        assert_eq!(snap.total, 8);
+    }
+
+    #[test]
+    fn double_click_fixed_repeat_matches_target() {
+        let backend = Arc::new(DummyBackend::new((350, 350)));
+        let (tx, rx) = mpsc::channel();
+        let engine = Arc::new(ClickEngine::with_backend(
+            backend,
+            Some(Arc::new(move |r| {
+                let _ = tx.send(r);
+            })),
+        ));
+        let settings = ClickSettings {
+            interval_ms: 5.0,
+            repeat_count: 5,
+            double_click: true,
+            corner_failsafe: false,
+            ..Default::default()
+        };
+
+        assert!(engine.start(settings));
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap(), StopReason::Completed);
+        thread::sleep(Duration::from_millis(10));
+
+        let snap = engine.snapshot();
+        assert_eq!(snap.run_clicks, 10);
+        assert_eq!(snap.target, 10);
+        assert_eq!(snap.total, 10);
     }
 }

@@ -128,11 +128,6 @@ pub fn install_portable_to_programs(create_desktop_shortcut: bool) -> Result<Pat
         let dst_exe = install_dir.join(APP_EXE);
         fs::copy(&src_exe, &dst_exe).map_err(|e| format!("Failed copying {APP_EXE}: {e}"))?;
 
-        let stale_internal = install_dir.join("_internal");
-        if stale_internal.exists() {
-            let _ = fs::remove_dir_all(&stale_internal);
-        }
-
         let size_kb = fs::metadata(&dst_exe)
             .map(|m| (m.len() / 1024).max(1) as u32)
             .unwrap_or(4096);
@@ -185,12 +180,65 @@ pub fn install_portable_to_programs(create_desktop_shortcut: bool) -> Result<Pat
             .stderr(Stdio::null())
             .status();
 
+        cleanup_legacy_clickforge();
+
         Ok(dst_exe)
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = create_desktop_shortcut;
         Err("Windows Programs installation is only supported on Windows.".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn cleanup_legacy_clickforge() {
+    use std::ffi::OsStr;
+    use std::fs;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::Registry::{RegDeleteTreeW, HKEY_CURRENT_USER};
+
+    let local_base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("AppData").join("Local"))
+        });
+    if let Some(base) = local_base {
+        let legacy_dir = base.join("Programs").join("ClickForge");
+        if legacy_dir.is_dir() {
+            let _ = fs::remove_dir_all(legacy_dir);
+        }
+    }
+
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let legacy_menu = PathBuf::from(appdata)
+            .join("Microsoft\\Windows\\Start Menu\\Programs")
+            .join("ClickForge");
+        if legacy_menu.is_dir() {
+            let _ = fs::remove_dir_all(legacy_menu);
+        }
+    }
+
+    if let Some(profile) = std::env::var_os("USERPROFILE") {
+        let legacy_desktop = PathBuf::from(profile)
+            .join("Desktop")
+            .join("ClickForge.lnk");
+        if legacy_desktop.is_file() {
+            let _ = fs::remove_file(legacy_desktop);
+        }
+    }
+
+    for reg_path in [
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\ClickForge",
+        r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{8F6D7C4A-3A2B-4E1C-9D8A-1F2E3D4C5B6A}_is1",
+    ] {
+        let subkey: Vec<u16> = OsStr::new(reg_path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe {
+            let _ = RegDeleteTreeW(HKEY_CURRENT_USER, subkey.as_ptr());
+        }
     }
 }
 
@@ -277,9 +325,9 @@ mod tests {
     #[test]
     fn select_setup_finds_asset() {
         let rel = ReleaseInfo {
-            tag: "v1.0.0".to_string(),
-            version: (1, 0, 0),
-            title: "v1.0.0".to_string(),
+            tag: "v1.1.0".to_string(),
+            version: (1, 1, 0),
+            title: "v1.1.0".to_string(),
             page_url: String::new(),
             notes: String::new(),
             assets: vec![Asset {

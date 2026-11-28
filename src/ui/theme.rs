@@ -117,9 +117,22 @@ pub fn system_prefers_dark(ctx: &egui::Context) -> bool {
 fn windows_prefers_dark() -> Option<bool> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, REG_DWORD,
     };
+
+    type ThemeCache = Mutex<Option<(Instant, Option<bool>)>>;
+    static CACHE: OnceLock<ThemeCache> = OnceLock::new();
+    let mutex = CACHE.get_or_init(|| Mutex::new(None));
+    if let Ok(guard) = mutex.lock() {
+        if let Some((at, cached)) = *guard {
+            if at.elapsed() < Duration::from_millis(1500) {
+                return cached;
+            }
+        }
+    }
 
     let subkey: Vec<u16> =
         OsStr::new(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
@@ -131,29 +144,35 @@ fn windows_prefers_dark() -> Option<bool> {
         .chain(std::iter::once(0))
         .collect();
 
-    unsafe {
+    let result = unsafe {
         let mut hkey: HKEY = std::ptr::null_mut();
         if RegOpenKeyExW(HKEY_CURRENT_USER, subkey.as_ptr(), 0, KEY_READ, &mut hkey) != 0 {
-            return None;
-        }
-        let mut ty: u32 = 0;
-        let mut data: u32 = 1;
-        let mut size: u32 = 4;
-        let rc = RegQueryValueExW(
-            hkey,
-            val_name.as_ptr(),
-            std::ptr::null(),
-            &mut ty,
-            (&mut data as *mut u32) as *mut u8,
-            &mut size,
-        );
-        RegCloseKey(hkey);
-        if rc == 0 && ty == REG_DWORD {
-            Some(data == 0)
-        } else {
             None
+        } else {
+            let mut ty: u32 = 0;
+            let mut data: u32 = 1;
+            let mut size: u32 = 4;
+            let rc = RegQueryValueExW(
+                hkey,
+                val_name.as_ptr(),
+                std::ptr::null(),
+                &mut ty,
+                (&mut data as *mut u32) as *mut u8,
+                &mut size,
+            );
+            RegCloseKey(hkey);
+            if rc == 0 && ty == REG_DWORD {
+                Some(data == 0)
+            } else {
+                None
+            }
         }
+    };
+
+    if let Ok(mut guard) = mutex.lock() {
+        *guard = Some((Instant::now(), result));
     }
+    result
 }
 
 pub fn install_native_fonts(ctx: &egui::Context) {
@@ -165,7 +184,11 @@ pub fn install_native_fonts(ctx: &egui::Context) {
             r"C:\Windows\Fonts\tahoma.ttf",
         ]
     } else if cfg!(target_os = "macos") {
-        &["/Library/Fonts/SF-Pro-Text-Regular.otf"]
+        &[
+            "/Library/Fonts/SF-Pro-Text-Regular.otf",
+            "/System/Library/Fonts/SFNS.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+        ]
     } else {
         &[
             "/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
@@ -180,7 +203,12 @@ pub fn install_native_fonts(ctx: &egui::Context) {
             r"C:\Windows\Fonts\consola.ttf",
         ]
     } else if cfg!(target_os = "macos") {
-        &[]
+        &[
+            "/System/Library/Fonts/SFNSMono.ttf",
+            "/Library/Fonts/SF-Mono-Regular.otf",
+            "/System/Library/Fonts/Menlo.ttc",
+            "/System/Library/Fonts/Monaco.ttf",
+        ]
     } else {
         &[
             "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
@@ -191,18 +219,18 @@ pub fn install_native_fonts(ctx: &egui::Context) {
     if let Some(bytes) = first_existing_font(ui_candidates) {
         fonts
             .font_data
-            .insert("cf_ui".to_owned(), Arc::new(FontData::from_owned(bytes)));
+            .insert("klick_ui".to_owned(), Arc::new(FontData::from_owned(bytes)));
         if let Some(fam) = fonts.families.get_mut(&FontFamily::Proportional) {
-            fam.insert(0, "cf_ui".to_owned());
+            fam.insert(0, "klick_ui".to_owned());
         }
     }
 
     if let Some(bytes) = first_existing_font(mono_candidates) {
         fonts
             .font_data
-            .insert("cf_mono".to_owned(), Arc::new(FontData::from_owned(bytes)));
+            .insert("klick_mono".to_owned(), Arc::new(FontData::from_owned(bytes)));
         if let Some(fam) = fonts.families.get_mut(&FontFamily::Monospace) {
-            fam.insert(0, "cf_mono".to_owned());
+            fam.insert(0, "klick_mono".to_owned());
         }
     }
 

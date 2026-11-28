@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::core::hotkeys::normalize_binding;
 use crate::core::validation::{clamp_f64, to_interval_ms};
-use crate::meta::{APP_NAME, LEGACY_APP_NAME};
+use crate::meta::APP_NAME;
 
 pub const SCHEMA_VERSION: u32 = 5;
 pub const PROFILE_NAMES: [&str; 4] = ["Default", "Fast", "Humanized", "Custom"];
@@ -218,24 +218,8 @@ impl AppConfig {
         Self::config_base_dir().join(APP_NAME).join("config.json")
     }
 
-    pub fn legacy_config_path() -> PathBuf {
-        Self::config_base_dir()
-            .join(LEGACY_APP_NAME)
-            .join("config.json")
-    }
-
     pub fn load_default() -> Self {
-        Self::load_default_from_paths(Self::default_config_path(), Self::legacy_config_path())
-    }
-
-    pub fn load_default_from_paths(new_path: PathBuf, legacy_path: PathBuf) -> Self {
-        if new_path.is_file() || !legacy_path.is_file() {
-            return Self::load_from_path(new_path);
-        }
-        let mut cfg = Self::load_from_path(legacy_path);
-        cfg.path = Some(new_path);
-        let _ = cfg.save();
-        cfg
+        Self::load_from_path(Self::default_config_path())
     }
 
     pub fn load_from_path(path: PathBuf) -> Self {
@@ -296,29 +280,6 @@ impl AppConfig {
         }
         if let Some(custom_val) = obj.get("custom") {
             cfg.custom = ProfileSettings::from_json_lenient(custom_val);
-        }
-
-        // Legacy schema migration (Python v3.2.0 Schema 5)
-        let saved_schema = obj.get("schema").and_then(Value::as_u64).unwrap_or(0) as u32;
-        if saved_schema < SCHEMA_VERSION {
-            if cfg.profile == "Default"
-                && cfg.settings.speed_unit == "ms"
-                && (cfg.settings.speed_value - 100.0).abs() < 1e-6
-            {
-                cfg.settings.speed_value = 10.0;
-            }
-            if cfg.settings.position_mode == "fixed"
-                && cfg.settings.fixed_x == 0
-                && cfg.settings.fixed_y == 0
-            {
-                cfg.settings.position_mode = "cursor".to_string();
-            }
-            if cfg.custom.position_mode == "fixed"
-                && cfg.custom.fixed_x == 0
-                && cfg.custom.fixed_y == 0
-            {
-                cfg.custom.position_mode = "cursor".to_string();
-            }
         }
 
         cfg.schema = SCHEMA_VERSION;
@@ -419,26 +380,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn corrupt_and_legacy_config_safely_migrated() {
-        let legacy: Value = serde_json::json!({
+    fn corrupt_config_safely_sanitized() {
+        let raw: Value = serde_json::json!({
             "schema": 4,
-            "profile": "Default",
+            "profile": "UnknownProfile",
+            "theme": "Neon",
             "hotkey": "vk117",
             "settings": {
-                "speed_value": 100.0,
-                "speed_unit": "ms",
-                "position_mode": "fixed",
-                "fixed_x": 0,
-                "fixed_y": 0,
-                "repeat_count": 999999999
+                "speed_value": -5.0,
+                "speed_unit": "hours",
+                "position_mode": "invalid_mode",
+                "repeat_count": 999999999,
+                "jitter_pct": 150.0,
+                "hold_min_ms": 80.0,
+                "hold_max_ms": 20.0,
+                "pos_jitter_px": 999
             }
         });
-        let cfg = AppConfig::from_json_lenient(&legacy);
+        let cfg = AppConfig::from_json_lenient(&raw);
         assert_eq!(cfg.schema, SCHEMA_VERSION);
+        assert_eq!(cfg.profile, "Default");
+        assert_eq!(cfg.theme, "System");
         assert_eq!(cfg.hotkey, "f6");
         assert_eq!(cfg.settings.speed_value, 10.0);
+        assert_eq!(cfg.settings.speed_unit, "ms");
         assert_eq!(cfg.settings.position_mode, "cursor");
         assert_eq!(cfg.settings.repeat_count, 10_000_000);
+        assert_eq!(cfg.settings.jitter_pct, 80.0);
+        assert_eq!(cfg.settings.hold_min_ms, 80.0);
+        assert_eq!(cfg.settings.hold_max_ms, 80.0);
+        assert_eq!(cfg.settings.pos_jitter_px, 50);
     }
 
     #[test]
@@ -454,28 +425,5 @@ mod tests {
         cfg2.import_profile_json(&exported).unwrap();
         assert_eq!(cfg2.profile, "Custom");
         assert!(cfg2.settings.humanize);
-    }
-
-    #[test]
-    fn load_from_legacy_migrates_to_new_path() {
-        let root = std::env::temp_dir().join("klick_test_legacy_cfg_migration");
-        let _ = fs::remove_dir_all(&root);
-        let legacy_path = root.join("ClickForge").join("config.json");
-        let new_path = root.join("Klick").join("config.json");
-
-        let legacy = AppConfig {
-            hotkey: "f8".to_string(),
-            theme: "Light".to_string(),
-            path: Some(legacy_path.clone()),
-            ..Default::default()
-        };
-        legacy.save().unwrap();
-
-        let migrated = AppConfig::load_default_from_paths(new_path.clone(), legacy_path);
-        assert_eq!(migrated.hotkey, "f8");
-        assert_eq!(migrated.theme, "Light");
-        assert!(new_path.is_file());
-
-        let _ = fs::remove_dir_all(&root);
     }
 }

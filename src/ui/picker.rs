@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{
-    self, pos2, vec2, Align2, Color32, CornerRadius, CursorIcon, FontId, Frame, Stroke, StrokeKind,
+    self, pos2, vec2, Color32, CornerRadius, CursorIcon, FontId, Frame, Stroke, StrokeKind,
     ViewportBuilder, ViewportId,
 };
 
@@ -120,33 +120,55 @@ impl CoordinatePicker {
                         [pos2(local_cur.x, screen.min.y), pos2(local_cur.x, screen.max.y)],
                         Stroke::new(1.0_f32, line_col),
                     );
-                    painter.circle_stroke(local_cur, 12.0, Stroke::new(1.5_f32, emerald));
+                    let pulse = (opened_at.elapsed().as_secs_f32() * 4.5).sin() * 0.5 + 0.5;
+                    let pulse_alpha = (145.0 * (1.0 - pulse * 0.65)).round() as u8;
+                    let pulse_col = Color32::from_rgba_unmultiplied(0x10, 0xB9, 0x81, pulse_alpha);
+                    painter.circle_stroke(
+                        local_cur,
+                        12.0 + pulse * 6.0,
+                        Stroke::new(1.2_f32, pulse_col),
+                    );
+                    painter.circle_stroke(local_cur, 11.0, Stroke::new(1.5_f32, emerald));
                     painter.circle_filled(local_cur, 2.5, Color32::WHITE);
 
-                    // Top floating HUD pill
+                    // Cursor-anchored floating HUD pill (stays on the active monitor)
                     let hud_text = format!(
-                        "X: {}   Y: {}   ·   Left-click to pick   ·   Esc / Right-click to cancel",
+                        "X: {}  Y: {}  ·  Click to pick  ·  Esc / Right-click",
                         global_pos.0, global_pos.1
                     );
-                    let pill_w = 500.0;
-                    let pill_h = 34.0;
-                    let pill_rect = egui::Rect::from_center_size(
-                        pos2(screen.center().x, screen.min.y + 42.0),
-                        vec2(pill_w, pill_h),
-                    );
+                    let font = FontId::monospace(12.0);
+                    let text_col = Color32::from_rgb(0xEC, 0xED, 0xEF);
+                    let galley = painter.layout_no_wrap(hud_text, font, text_col);
+                    let pill_w = (galley.size().x + 24.0).max(300.0);
+                    let pill_h = 30.0;
+                    let margin = 12.0;
+
+                    let mut px = local_cur.x + 18.0;
+                    if px + pill_w > screen.max.x - margin {
+                        px = local_cur.x - 18.0 - pill_w;
+                    }
+                    let mut py = local_cur.y + 22.0;
+                    if py + pill_h > screen.max.y - margin {
+                        py = local_cur.y - 22.0 - pill_h;
+                    }
+                    px = px.clamp(screen.min.x + margin, (screen.max.x - margin - pill_w).max(screen.min.x + margin));
+                    py = py.clamp(screen.min.y + margin, (screen.max.y - margin - pill_h).max(screen.min.y + margin));
+
+                    let pill_rect = egui::Rect::from_min_size(pos2(px, py), vec2(pill_w, pill_h));
                     painter.rect(
                         pill_rect,
-                        CornerRadius::same(10),
+                        CornerRadius::same(9),
                         Color32::from_rgba_unmultiplied(0x12, 0x14, 0x18, 240),
                         Stroke::new(1.0_f32, Color32::from_rgb(0x30, 0x36, 0x42)),
                         StrokeKind::Inside,
                     );
-                    painter.text(
-                        pill_rect.center(),
-                        Align2::CENTER_CENTER,
-                        hud_text,
-                        FontId::monospace(12.5),
-                        Color32::from_rgb(0xEC, 0xED, 0xEF),
+                    painter.galley(
+                        pos2(
+                            pill_rect.center().x - galley.size().x * 0.5,
+                            pill_rect.center().y - galley.size().y * 0.5,
+                        ),
+                        galley,
+                        text_col,
                     );
                 });
         });

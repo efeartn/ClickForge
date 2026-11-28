@@ -1,8 +1,9 @@
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use eframe::egui::{
-    self, Align, Color32, CornerRadius, CursorIcon, FontId, Frame, Margin, RichText, Sense, Stroke,
-    StrokeKind, TextEdit, Ui, Vec2,
+    self, Align, Color32, CornerRadius, CursorIcon, FontId, Frame, Margin, Pos2, RichText, Sense,
+    Shape, Stroke, StrokeKind, TextEdit, Ui, Vec2,
 };
 
 use crate::ui::icons::{paint_header_icon, HeaderIconKind};
@@ -348,6 +349,38 @@ pub fn accent_button(
     resp
 }
 
+pub fn warning_button(
+    ui: &mut Ui,
+    p: &Palette,
+    text: &str,
+    size: Vec2,
+    font_size: f32,
+    radius: u8,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if resp.hovered() {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+    }
+    if ui.is_rect_visible(rect) {
+        let hov = Color32::from_rgb(
+            p.warning.r().saturating_add(14),
+            p.warning.g().saturating_add(14),
+            p.warning.b().saturating_add(14),
+        );
+        let fill = if resp.hovered() { hov } else { p.warning };
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(radius), fill);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            FontId::proportional(font_size),
+            Color32::from_rgb(0x11, 0x13, 0x18),
+        );
+    }
+    resp
+}
+
 pub fn keycap_button(
     ui: &mut Ui,
     p: &Palette,
@@ -414,27 +447,125 @@ pub fn keycap_button(
     resp
 }
 
-pub fn status_pill(ui: &mut Ui, p: &Palette, active: bool) {
-    let text = if active { "Running" } else { "Ready" };
-    let desired = Vec2::new(if active { 78.0 } else { 68.0 }, 26.0);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusPillState {
+    Ready,
+    Arming,
+    Running,
+}
+
+pub fn status_pill(ui: &mut Ui, p: &Palette, state: StatusPillState) {
+    let (text, width) = match state {
+        StatusPillState::Ready => ("Ready", 68.0),
+        StatusPillState::Arming => ("Arming", 76.0),
+        StatusPillState::Running => ("Running", 78.0),
+    };
+    let desired = Vec2::new(width, 26.0);
     let (rect, _) = ui.allocate_exact_size(desired, Sense::hover());
     if ui.is_rect_visible(rect) {
-        let fill = if active { p.success_soft } else { p.field };
-        let stroke = Stroke::new(1.0_f32, if active { p.accent } else { p.border });
-        ui.painter()
-            .rect(rect, CornerRadius::same(13), fill, stroke, StrokeKind::Inside);
-        let dot_col = if active { p.success } else { p.text_faint };
-        ui.painter().circle_filled(
-            egui::pos2(rect.min.x + 12.0, rect.center().y),
-            3.5,
-            dot_col,
+        let (fill, border_col, dot_col, text_col) = match state {
+            StatusPillState::Ready => (p.field, p.border, p.text_faint, p.text_muted),
+            StatusPillState::Arming => (p.field, p.warning, p.warning, p.warning),
+            StatusPillState::Running => (p.success_soft, p.accent, p.success, p.success),
+        };
+        ui.painter().rect(
+            rect,
+            CornerRadius::same(13),
+            fill,
+            Stroke::new(1.0_f32, border_col),
+            StrokeKind::Inside,
         );
+        let dot_center = egui::pos2(rect.min.x + 12.0, rect.center().y);
+        if matches!(state, StatusPillState::Running | StatusPillState::Arming) {
+            let phase = (ui.input(|i| i.time) * 3.8).sin() as f32 * 0.5 + 0.5;
+            let alpha = (95.0 * (1.0 - phase * 0.65)).round() as u8;
+            let halo = Color32::from_rgba_unmultiplied(dot_col.r(), dot_col.g(), dot_col.b(), alpha);
+            ui.painter()
+                .circle_filled(dot_center, 3.5 + phase * 3.2, halo);
+        }
+        ui.painter().circle_filled(dot_center, 3.5, dot_col);
         ui.painter().text(
             egui::pos2(rect.min.x + 21.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
             text,
             FontId::proportional(11.5),
-            if active { p.success } else { p.text_muted },
+            text_col,
         );
     }
+}
+
+pub fn cps_sparkline(
+    ui: &mut Ui,
+    p: &Palette,
+    samples: &VecDeque<f32>,
+    active: bool,
+    size: Vec2,
+) {
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        painter.rect(
+            rect,
+            CornerRadius::same(6),
+            p.field,
+            Stroke::new(1.0_f32, if active { p.border_strong } else { p.border }),
+            StrokeKind::Inside,
+        );
+
+        let plot = rect.shrink2(Vec2::new(5.0, 4.0));
+        let max_val = samples.iter().copied().fold(0.0_f32, f32::max);
+        if samples.len() >= 2 && max_val > 0.0 && plot.width() > 2.0 && plot.height() > 2.0 {
+            let scale_max = max_val.max(10.0) * 1.15;
+            let n = samples.len();
+            let pts: Vec<Pos2> = samples
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| {
+                    let tx = i as f32 / (n - 1) as f32;
+                    let ty = (v.max(0.0) / scale_max).clamp(0.0, 1.0);
+                    Pos2::new(
+                        plot.min.x + tx * plot.width(),
+                        plot.max.y - ty * plot.height(),
+                    )
+                })
+                .collect();
+
+            let line_col = if active { p.accent } else { p.text_muted };
+            let fill_col = Color32::from_rgba_unmultiplied(
+                line_col.r(),
+                line_col.g(),
+                line_col.b(),
+                if active { 38 } else { 18 },
+            );
+
+            let mut mesh = egui::epaint::Mesh::default();
+            for pair in pts.windows(2) {
+                let p0 = pair[0];
+                let p1 = pair[1];
+                let b0 = Pos2::new(p0.x, plot.max.y);
+                let b1 = Pos2::new(p1.x, plot.max.y);
+                let base = mesh.vertices.len() as u32;
+                mesh.colored_vertex(p0, fill_col);
+                mesh.colored_vertex(p1, fill_col);
+                mesh.colored_vertex(b1, fill_col);
+                mesh.colored_vertex(b0, fill_col);
+                mesh.add_triangle(base, base + 1, base + 2);
+                mesh.add_triangle(base, base + 2, base + 3);
+            }
+            painter.add(Shape::mesh(mesh));
+            painter.add(Shape::line(pts.clone(), Stroke::new(1.5_f32, line_col)));
+            if active {
+                if let Some(&last) = pts.last() {
+                    painter.circle_filled(last, 2.2, p.success);
+                }
+            }
+        } else {
+            let y = plot.max.y - 2.0;
+            painter.line_segment(
+                [Pos2::new(plot.min.x, y), Pos2::new(plot.max.x, y)],
+                Stroke::new(1.0_f32, p.border_strong),
+            );
+        }
+    }
+    resp.on_hover_text("Live CPS trend");
 }

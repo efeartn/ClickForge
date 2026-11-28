@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -30,9 +31,9 @@ use crate::ui::icons::HeaderIconKind;
 use crate::ui::picker::{CoordinatePicker, PickerOutcome};
 use crate::ui::theme::{apply_visuals, install_native_fonts, system_prefers_dark, Palette};
 use crate::ui::widgets::{
-    accent_button, card_frame, ghost_button, header_icon_button, keycap_button, number_field,
-    row_label, section_title, segmented_control, status_pill, toggle_switch, CONTROL_H,
-    WINDOW_WIDTH,
+    accent_button, card_frame, cps_sparkline, ghost_button, header_icon_button, keycap_button,
+    number_field, row_label, section_title, segmented_control, status_pill, toggle_switch,
+    warning_button, StatusPillState, CONTROL_H, WINDOW_WIDTH,
 };
 
 const STARTUP_UPDATE_DELAY_MS: u64 = 600;
@@ -194,12 +195,15 @@ pub struct KlickApp {
 
     // Runtime & status
     trigger_is_hold: Arc<AtomicBool>,
+    pending_start_at: Option<Instant>,
+    cps_history: VecDeque<f32>,
+    last_cps_sample: Instant,
     recording_hotkey: bool,
     any_field_focused: bool,
     last_os_dark: Option<bool>,
     last_theme_mode: String,
     last_target_h: f32,
-    last_layout_sig: Option<(bool, bool, bool, bool)>,
+    last_layout_sig: Option<(bool, bool, bool, bool, bool, bool)>,
     auto_resize_frames: u8,
     platform_warnings_checked: bool,
 
@@ -351,6 +355,9 @@ impl KlickApp {
             coords_err: None,
             human_err: None,
             trigger_is_hold,
+            pending_start_at: None,
+            cps_history: VecDeque::with_capacity(36),
+            last_cps_sample: Instant::now(),
             recording_hotkey: false,
             any_field_focused: false,
             last_os_dark: Some(pal.is_dark),
@@ -508,7 +515,29 @@ impl KlickApp {
         }
     }
 
+    fn start_from_ui(&mut self) {
+        if self.engine.is_active() {
+            self.stop_clicking(false);
+            return;
+        }
+        if self.pending_start_at.is_some() {
+            self.pending_start_at = None;
+            return;
+        }
+        if self.recording_hotkey || self.picker.is_active() {
+            return;
+        }
+        self.commit_all_fields();
+        self.modal = None;
+        if self.config.settings.position_mode == "cursor" {
+            self.pending_start_at = Some(Instant::now() + Duration::from_secs(2));
+        } else {
+            self.start_clicking();
+        }
+    }
+
     fn start_clicking(&mut self) {
+        self.pending_start_at = None;
         if self.engine.is_active() || self.recording_hotkey || self.picker.is_active() {
             return;
         }
@@ -516,11 +545,15 @@ impl KlickApp {
         self.modal = None;
         let settings = self.build_click_settings();
         if self.engine.start(settings) {
+            self.cps_history.clear();
+            self.cps_history.push_back(0.0);
+            self.last_cps_sample = Instant::now();
             play_cue(true, self.config.sound_cue);
         }
     }
 
     fn stop_clicking(&mut self, wait: bool) {
+        self.pending_start_at = None;
         let was_active = self.engine.is_active();
         self.engine.stop(wait);
         if was_active {
@@ -533,6 +566,28 @@ impl KlickApp {
             self.stop_clicking(false);
         } else {
             self.start_clicking();
+        }
+    }
+
+    fn hold_duty_cap_ms(&self) -> Option<(f64, f64)> {
+        if !self.config.settings.humanize {
+            return None;
+        }
+        let preview_val = sanitize_speed(&self.speed_buf, &self.config.settings.speed_unit)
+            .unwrap_or(self.config.settings.speed_value);
+        let interval_ms = to_interval_ms(preview_val, &self.config.settings.speed_unit);
+        let clicks_per_action = if self.config.settings.click_type == "double" {
+            2.0
+        } else {
+            1.0
+        };
+        let cap_ms = interval_ms * 0.6 / clicks_per_action;
+        let hold_max =
+            parse_float(&self.hold_max_buf).unwrap_or(self.config.settings.hold_max_ms);
+        if hold_max > cap_ms + 0.05 {
+            Some((cap_ms, interval_ms))
+        } else {
+            None
         }
     }
 
@@ -557,10 +612,12 @@ impl KlickApp {
                 }
                 AppEvent::Hotkey(hk) => match hk {
                     TriggerEvent::Panic => {
+                        self.pending_start_at = None;
                         self.picker.cancel();
                         self.stop_clicking(false);
                     }
                     TriggerEvent::Down => {
+                        self.pending_start_at = None;
                         if self.config.trigger_mode == "hold" {
                             self.start_clicking();
                         } else {
@@ -750,6 +807,15 @@ impl KlickApp {
             }
         }
 
+        if self.pending_start_at.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.pending_start_at = None;
+        }
+        if let Some(deadline) = self.pending_start_at {
+            if Instant::now() >= deadline {
+                self.pending_start_at = None;
+                self.start_clicking();
+            }
+        }
         if let Some(b) = &self.banner {
             if b.auto_hide_at.is_some_and(|t| Instant::now() >= t) {
                 self.banner = None;
@@ -1119,7 +1185,14 @@ impl KlickApp {
             ui.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let active = self.engine.is_active();
-                status_pill(ui, p, active);
+                let pill_state = if active {
+                    StatusPillState::Running
+                } else if self.pending_start_at.is_some() {
+                    StatusPillState::Arming
+                } else {
+                    StatusPillState::Ready
+                };
+                status_pill(ui, p, pill_state);
 
                 if cfg!(target_os = "windows") && !installer::is_installed_in_programs(None) {
                     let btn = ghost_button(ui, p, "Setup", Vec2::new(50.0, 28.0), !self.setup_busy);
@@ -1315,6 +1388,15 @@ impl KlickApp {
     fn render_telemetry_card(&mut self, ui: &mut Ui, p: &Palette) {
         let snap = self.engine.snapshot();
         let active = snap.active;
+        let arming = self.pending_start_at.is_some();
+
+        if active && self.last_cps_sample.elapsed() >= Duration::from_millis(120) {
+            if self.cps_history.len() >= 36 {
+                self.cps_history.pop_front();
+            }
+            self.cps_history.push_back(snap.cps as f32);
+            self.last_cps_sample = Instant::now();
+        }
 
         card_frame(p, active).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1331,20 +1413,27 @@ impl KlickApp {
                     section_title(ui, p, "LIVE CPS");
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 6.0;
-                        let total_text = if snap.target > 0 {
-                            format!(
-                                "Total: {} / {}",
-                                fmt_with_commas(snap.total),
-                                fmt_with_commas(snap.target)
-                            )
-                        } else {
-                            format!("Total: {}", fmt_with_commas(snap.total))
-                        };
-                        ui.label(
-                            RichText::new(total_text)
+                        if snap.target > 0 {
+                            ui.label(
+                                RichText::new(format!(
+                                    "Run: {} / {}",
+                                    fmt_with_commas(snap.run_clicks),
+                                    fmt_with_commas(snap.target)
+                                ))
                                 .font(FontId::monospace(11.0))
                                 .color(p.text_muted),
-                        );
+                            )
+                            .on_hover_text(format!(
+                                "Session total: {} clicks",
+                                fmt_with_commas(snap.total)
+                            ));
+                        } else {
+                            ui.label(
+                                RichText::new(format!("Total: {}", fmt_with_commas(snap.total)))
+                                    .font(FontId::monospace(11.0))
+                                    .color(p.text_muted),
+                            );
+                        }
 
                         let d = snap.elapsed_secs;
                         let mins = (d as u64) / 60;
@@ -1364,9 +1453,31 @@ impl KlickApp {
                         .clicked()
                     {
                         self.engine.reset_stats();
+                        self.cps_history.clear();
+                    }
+                    ui.add_space(6.0);
+                    let spark_w = (ui.available_width() - 8.0).clamp(0.0, 96.0);
+                    if spark_w >= 44.0 {
+                        cps_sparkline(ui, p, &self.cps_history, active, Vec2::new(spark_w, 28.0));
                     }
                 });
             });
+
+            if snap.target > 0 {
+                ui.add_space(6.0);
+                let bar_w = ui.available_width();
+                let (bar_rect, _) =
+                    ui.allocate_exact_size(Vec2::new(bar_w, 3.0), egui::Sense::hover());
+                ui.painter()
+                    .rect_filled(bar_rect, CornerRadius::same(2), p.field);
+                let frac = (snap.run_clicks as f32 / snap.target as f32).clamp(0.0, 1.0);
+                if frac > 0.0 {
+                    let mut fill_rect = bar_rect;
+                    fill_rect.max.x = bar_rect.min.x + bar_rect.width() * frac;
+                    ui.painter()
+                        .rect_filled(fill_rect, CornerRadius::same(2), p.accent);
+                }
+            }
 
             // 1px hairline divider
             ui.add_space(7.0);
@@ -1402,7 +1513,7 @@ impl KlickApp {
                         (ProfileChoice::Humanized, "Humanized"),
                         (ProfileChoice::Custom, "Custom"),
                     ],
-                    !active,
+                    !active && !arming,
                     seg_w,
                 ) {
                     self.config.apply_preset(choice.as_str());
@@ -1416,7 +1527,7 @@ impl KlickApp {
     }
 
     fn render_speed_card(&mut self, ui: &mut Ui, p: &Palette) {
-        let locked = self.engine.is_active();
+        let locked = self.engine.is_active() || self.pending_start_at.is_some();
         let editable = !locked;
         card_frame(p, false).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -1556,7 +1667,7 @@ impl KlickApp {
     }
 
     fn render_target_card(&mut self, ui: &mut Ui, p: &Palette) {
-        let editable = !self.engine.is_active();
+        let editable = !self.engine.is_active() && self.pending_start_at.is_none();
         card_frame(p, false).show(ui, |ui| {
             ui.set_width(ui.available_width());
             section_title(ui, p, "Action & Target");
@@ -1711,7 +1822,7 @@ impl KlickApp {
     }
 
     fn render_humanizer_card(&mut self, ui: &mut Ui, p: &Palette) {
-        let editable = !self.engine.is_active();
+        let editable = !self.engine.is_active() && self.pending_start_at.is_none();
         card_frame(p, false).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
@@ -1846,13 +1957,28 @@ impl KlickApp {
                             .color(p.text_faint),
                     );
                 });
+
+                if let Some((cap_ms, interval_ms)) = self.hold_duty_cap_ms() {
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 0.0;
+                        ui.add_space(row_label_w_pad());
+                        ui.label(
+                            RichText::new(format!(
+                                "Hold capped to {cap_ms:.1} ms by {interval_ms:.1} ms interval"
+                            ))
+                            .font(FontId::proportional(11.0))
+                            .color(p.warning),
+                        );
+                    });
+                }
             }
         });
     }
 
     fn render_footer(&mut self, ui: &mut Ui, p: &Palette) {
         let active = self.engine.is_active();
-        let editable = !active;
+        let editable = !active && self.pending_start_at.is_none();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             ui.allocate_ui_with_layout(
@@ -1918,23 +2044,43 @@ impl KlickApp {
 
         ui.add_space(8.0);
         let hk_name = hotkey_display_name(&self.config.hotkey);
-        let cta_text = if active {
-            format!("STOP ({hk_name})")
+        if let Some(deadline) = self.pending_start_at {
+            let rem = deadline
+                .saturating_duration_since(Instant::now())
+                .as_secs_f32()
+                .max(0.1);
+            let cancel_text = format!("STARTING IN {rem:.1}s — CLICK TO CANCEL");
+            if warning_button(
+                ui,
+                p,
+                &cancel_text,
+                Vec2::new(ui.available_width(), 42.0),
+                13.5,
+                10,
+            )
+            .clicked()
+            {
+                self.start_from_ui();
+            }
         } else {
-            format!("START ({hk_name})")
-        };
-        if accent_button(
-            ui,
-            p,
-            &cta_text,
-            Vec2::new(ui.available_width(), 42.0),
-            active,
-            14.0,
-            10,
-        )
-        .clicked()
-        {
-            self.toggle_clicking();
+            let cta_text = if active {
+                format!("STOP ({hk_name})")
+            } else {
+                format!("START ({hk_name})")
+            };
+            if accent_button(
+                ui,
+                p,
+                &cta_text,
+                Vec2::new(ui.available_width(), 42.0),
+                active,
+                14.0,
+                10,
+            )
+            .clicked()
+            {
+                self.start_from_ui();
+            }
         }
 
         ui.add_space(4.0);
@@ -2287,6 +2433,8 @@ impl eframe::App for KlickApp {
             self.config.settings.position_mode == "fixed",
             self.config.settings.humanize,
             self.modal.is_some(),
+            self.engine.snapshot().target > 0,
+            self.hold_duty_cap_ms().is_some(),
         );
         if self.last_layout_sig != Some(layout_sig) {
             self.last_layout_sig = Some(layout_sig);
@@ -2308,6 +2456,7 @@ impl eframe::App for KlickApp {
 
         // Low idle CPU when settled; smooth updates when running or animating
         let busy = self.engine.is_active()
+            || self.pending_start_at.is_some()
             || self.recording_hotkey
             || self.picker.is_active()
             || self.update_busy

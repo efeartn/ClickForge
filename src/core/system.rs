@@ -130,24 +130,18 @@ pub fn startup_warnings() -> Vec<String> {
     warnings
 }
 
-/// Remove legacy `_internal/.migrated` markers or leftover `.klbak`/`.cfbak` files after an update.
-pub fn cleanup_legacy_migration_marker() {
+/// Remove leftover `.klbak` update backup files after a self-update.
+pub fn cleanup_update_backups() {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
     let Some(dir) = exe.parent() else {
         return;
     };
-    let internal = dir.join("_internal");
-    if internal.is_dir() && internal.join(".migrated").is_file() {
-        let _ = fs::remove_dir_all(&internal);
-    }
     if let Some(name) = exe.file_name().and_then(|s| s.to_str()) {
-        for ext in [".klbak", ".cfbak"] {
-            let bak = dir.join(format!("{name}{ext}"));
-            if bak.is_file() {
-                let _ = fs::remove_file(&bak);
-            }
+        let bak = dir.join(format!("{name}.klbak"));
+        if bak.is_file() {
+            let _ = fs::remove_file(&bak);
         }
     }
 }
